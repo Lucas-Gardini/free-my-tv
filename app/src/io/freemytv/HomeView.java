@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
@@ -42,16 +43,17 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
- * The home screen, styled after the Apple TV app with the macOS 27 glass:
+ * The custom home screen, with a quiet cinematic landscape and navy glass app tiles:
  *  - at the top left, the "For You" title and the tabs (Explore, Movies, Shows); at the top right, icon-only glass
  *    buttons (Live TV, HDMI Inputs, Settings), with the focused one's name below it, and the small crypto quotes
  *    (logo + price) at the right end of the tab row;
  *  - three cards with the titles recommended for right now in the selected tab (Recs, from TMDB); the background is
- *    the first card's photo, heavily blurred and almost white (Backdrop); without one, a light gradient;
- *  - at the bottom, the glass shelf with the apps (icons in each brand's color, like the tvOS Dock; the focused one
- *    grows);
+ *    the first card's photo, heavily blurred (Backdrop); without picks, a local landscape behind the clock;
+ *  - at the bottom, consistent app tiles with labels and a cyan/violet focus border;
  *  - ↓ on the shelf: everything moves up and the bottom drawer appears (inputs, shortcuts, weather for the next hours
  *    and quotes with the 24 h change); the background lightens (darkens at night). ↑ or Back closes it;
  *  - from sunset to sunrise, a night look: dark background, smoked glass and white text.
@@ -66,13 +68,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Hero, anchored at the bottom (a two-line title grows upward).
     private static final float HERO_TITLE_W = 900;
     // Shelf: tiles with corners concentric with the glass (glass radius = tile radius + padding).
-    // Shelf like the tvOS 27 Dock: icons in each brand's color, 48 apart, and the glass bar hugging them with 40 of
-    // padding (the focused icon grows 20% without touching its edge). The icons are 16:9, the shape of the apps' TV
-    // banners, so those are never stretched: up to 224 × 126, 178 × 100 with eight apps.
-    private static final float SHELF_PAD = 40, TILE_GAP = 48;
+    // Compact app tiles; logos and fallback banners keep their original aspect ratio inside each surface.
+    private static final float SHELF_PAD = 24, TILE_GAP = 24;
     private static final float TILE_RADIUS = 22;
     // Tile focus (Apple TV style): it grows from the center and its shadow drops (it "rises" toward the viewer).
-    private static final float FOCUS_GROW = 0.2f;
+    private static final float FOCUS_GROW = 0.06f;
     // Corner capsule.
     // Corner capsule: the height and top offset of the tvOS tab bar (68 and 46).
     private static final float CAPSULE_TOP = 46, CAPSULE_H = 68, BUTTON = 56;
@@ -94,7 +94,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float L_TITLE_BASE = 130, L_TABBAR_TOP = 158, L_TABBAR_H = 68, L_CARDS_TOP = 262, L_CARD_H = 442;
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
-    private static final float L_DATE_BASE = 330, L_CLOCK_BASE = 540, L_WEATHER_BASE = 626, L_QUOTES_BASE = 694;
+    private static final float L_DATE_BASE = 340, L_CLOCK_BASE = 510, L_WEATHER_BASE = 600, L_QUOTES_BASE = 674;
     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
     private static final String[] TABS = {"Explorar", "Filmes", "Séries"};
     private static final String[] TABS_RU = {"Обзор", "Фильмы", "Сериалы"};
@@ -145,6 +145,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF[] cardRects = new RectF[3];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
+    private Paint clockFrost;
+    private Paint homeBrand, homeSignature, shelfLabel;
+    private String[] shelfLabels = new String[0];
+    private Bitmap wallpaper;
+    private Shader wallpaperShade;
+    private BitmapShader wallpaperGlass;
+    private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Matrix glassMatrix = new Matrix();
+    private Shader weatherGlass;
+    private String weatherRange = "";
+    private float weatherMainWidth, weatherRangeWidth;
     private Shader lightGradient;
 
     // Shelf
@@ -392,6 +403,47 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         setShelf(HomeApps.shelf(a, false));
         setStatusItems(statusList(a));
         setDrawerItems(drawerList(a));
+        loadWallpaper();
+    }
+
+    /** Decode and crop once off the UI thread, at the TV's actual drawing resolution. */
+    private void loadWallpaper() {
+        final Context context = getContext().getApplicationContext();
+        LOADER.execute(() -> {
+            try (InputStream in = context.getAssets().open("backgrounds/Vice_City_01.jpg")) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                Bitmap source = BitmapFactory.decodeStream(in, null, options);
+                if (source == null) return;
+                Bitmap image = Bitmap.createBitmap(Backdrop.W, Backdrop.H, Bitmap.Config.ARGB_8888);
+                float scale = Math.max((float) Backdrop.W / source.getWidth(), (float) Backdrop.H / source.getHeight());
+                float width = source.getWidth() * scale, height = source.getHeight() * scale;
+                new Canvas(image).drawBitmap(source, null,
+                        new RectF((Backdrop.W - width) / 2, (Backdrop.H - height) / 2,
+                                (Backdrop.W + width) / 2, (Backdrop.H + height) / 2),
+                        new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG));
+                source.recycle();
+                Bitmap softened = Bitmap.createScaledBitmap(image, 64, 36, true);
+                handler.post(() -> {
+                    wallpaper = image;
+                    wallpaperGlass = new BitmapShader(softened, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                    sizeWallpaperGlass();
+                    sky.invalidate();
+                    heroLayer.invalidate();
+                    tiles.invalidate();
+                });
+            } catch (IOException e) {
+                AppLog.w("wallpaper unavailable: " + e.getMessage());
+            }
+        });
+    }
+
+    private void sizeWallpaperGlass() {
+        if (wallpaperGlass == null || w == 0 || h == 0) return;
+        glassMatrix.setScale(w / 64f, h / 36f);
+        wallpaperGlass.setLocalMatrix(glassMatrix);
+        glassPaint.setShader(wallpaperGlass);
+        if (clockFrost != null) clockFrost.setShader(wallpaperGlass);
     }
 
     // MARK: - Lifecycle (called by HomeActivity)
@@ -505,8 +557,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(status, Math.round(1160 * kk), Math.round(240 * kk));
         // Sized to what they draw (the glass and its shadow; the grown tiles and their shadows): smaller layers are
         // cheaper for the GPU to composite on every frame of the drawer animation.
-        measure(platter, width, Math.round(320 * kk));
-        measure(tiles, width, Math.round(270 * kk));
+        measure(platter, width, Math.round(400 * kk));
+        measure(tiles, width, Math.round(400 * kk));
         measure(drawerLayer, width, Math.round(600 * kk));
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
@@ -523,8 +575,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sky.layout(0, 0, width, height);
         place(heroLayer, 0, 0);
         place(status, width - status.getMeasuredWidth(), 0);
-        place(platter, 0, Math.round(750 * kk));
-        place(tiles, 0, Math.round(790 * kk));
+        place(platter, 0, Math.round(650 * kk));
+        place(tiles, 0, Math.round(650 * kk));
         place(drawerLayer, 0, Math.round(470 * kk));
         sheetLayer.layout(0, 0, width, height);
         sheetLayer.setPivotX(width / 2f);
@@ -541,6 +593,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         h = height;
         k = w / 1920f;
         screen.set(0, 0, w, h);
+        sizeWallpaperGlass();
         scene.setSize(w, h);
         makePaints();
         gridLabels = null;
@@ -577,12 +630,32 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lQuote = Ui.numbers(Ui.regular, 21 * k, L_FAINT);
         lTip = Ui.text(Ui.semibold, 25 * k, L_INK);
         lTip.setTextAlign(Paint.Align.CENTER);
-        lDate = Ui.text(Ui.semibold, 34 * k, L_DIM);
-        lClock = Ui.numbers(Ui.light, 200 * k, L_INK);
-        lClock.setLetterSpacing(-0.01f);
-        lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
+        lDate = Ui.text(Ui.medium, 24 * k, L_DIM);
+        lDate.setLetterSpacing(0.04f);
+        lDate.setTextAlign(Paint.Align.CENTER);
+        lClock = Ui.numbers(Ui.semibold, 184 * k, L_INK);
+        lClock.setTextAlign(Paint.Align.CENTER);
+        lClock.setLetterSpacing(-0.025f);
+        lClock.setShadowLayer(10 * k, 0, 4 * k, 0x70000000);
+        clockFrost = new Paint(lClock);
+        clockFrost.clearShadowLayer();
+        clockFrost.setShader(wallpaperGlass);
+        lClock.setShader(new LinearGradient(0, (L_CLOCK_BASE - 140) * k, 0, (L_CLOCK_BASE + 4) * k,
+                new int[] {0xF8FFFFFF, 0xD9FFF9FD, 0x78DACDDF, 0xD9FFF7FD},
+                new float[] {0, 0.28f, 0.72f, 1}, Shader.TileMode.CLAMP));
+        lWeather = Ui.text(Ui.medium, 26 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
         lightGradient = null;
+        homeBrand = Ui.text(Ui.semibold, 32 * k, 0xF2F5F9FF);
+        homeSignature = Ui.text(Ui.regular, 19 * k, 0xA6BCD0E9);
+        shelfLabel = Ui.text(Ui.medium, 22 * k, WHITE);
+        shelfLabel.setTextAlign(Paint.Align.CENTER);
+        wallpaperShade = new LinearGradient(0, 0, 0, h,
+                new int[] {0x38030B18, 0x08030B18, 0x7808101C, 0xB0050912},
+                new float[] {0, 0.42f, 0.78f, 1}, Shader.TileMode.CLAMP);
+        weatherGlass = new LinearGradient(0, (L_WEATHER_BASE - 48) * k, 0, (L_WEATHER_BASE + 24) * k,
+                0x744B344E, 0xB0242034, Shader.TileMode.CLAMP);
+        weatherLineAt = -1;
         buttonPaint = Ui.text(Ui.semibold, 29 * k, INK);
         capsuleText = Ui.numbers(Ui.medium, 29 * k, 0xF2FFFFFF);
         tipPaint = Ui.text(Ui.semibold, 25 * k, 0xF2FFFFFF);
@@ -704,7 +777,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lift = -d * shift;
         show(heroLayer, top, lift);
         show(status, top, lift);
-        show(platter, home, lift);
+        show(platter, home * (1 - dc), 0);
         show(tiles, home, lift);
         float da = home * smoothstep(0.1f, 0.6f, dc);
         drawerLayer.setTranslationY((1 - d) * shift);
@@ -729,7 +802,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (minute == clockMinute || clockPaint == null) return false;
         clockMinute = minute;
         clockText = Ui.clock(now);
-        dateText = Ui.date(now);
+        dateText = Ui.date(now).toUpperCase(Ui.locale());
         return true;
     }
 
@@ -846,7 +919,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** No photo: the glass reads the background's own gray (not Scene's default aurora, which isn't on screen). */
     private void neutralGlass() {
-        int color = blend(0xFFEBEBF0, 0xFF141416, night);
+        int color = picksOn() ? blend(0xFFEBEBF0, 0xFF141416, night) : 0xFF102034;
         java.util.Arrays.fill(neutralFrostPx, color);
         java.util.Arrays.fill(neutralGlassPx, color);
         scene.setFrost(neutralFrostPx);
@@ -917,7 +990,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** How dark it is: 0 = day, 1 = night (in between during the transition). */
     private float dark() {
-        return night;
+        return picksOn() ? night : 1;
     }
 
     /** The day color or the night color, depending on the night value (blended during the transition). */
@@ -938,9 +1011,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lCardMeta.setColor(tone(L_DIM, 0xFF98989D));
         lQuote.setColor(tone(L_FAINT, 0xB8FFFFFF));
         lTip.setColor(tone(L_INK, WHITE));
-        lDate.setColor(tone(L_DIM, 0xFF98989D));
+        lDate.setColor(tone(L_DIM, 0xFFD0D9E8));
         lClock.setColor(tone(L_INK, WHITE));
-        lWeather.setColor(tone(L_DIM, 0xFF98989D));
+        lWeather.setColor(tone(L_DIM, 0xFFBACBE0));
         lClockQuote.setColor(tone(L_DIM, 0xFF98989D));
         staleQuote.setColor(tone(L_FAINT, 0x99FFFFFF));
     }
@@ -1122,32 +1195,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int n = shelf.size();
         float pad = SHELF_PAD * k, gap = TILE_GAP * k;
         float full = (CONTENT_R - MARGIN) * k;
-        // Tiles in the TV banners' own 16:9, so an app's art is never stretched; never taller than L_TILE_H. The glass
-        // keeps its bottom edge, so with more apps it only gets lower.
-        float tw = Math.min(L_TILE_H * 16f / 9 * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
-        float th = tw * 9f / 16;
+        // More apps shrink together to stay inside the safe area; labels are measured once at layout time.
+        float tw = Math.min(196 * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
+        float th = tw * 0.82f;
         float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
-        float top = (L_PLATTER_TOP + L_TILE_H) * k - th;
+        float top = (picksOn() ? 814 : 766) * k;
         platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
         float x = left, y = top + pad;
+        shelfLabels = new String[n];
         for (int i = 0; i < n; i++) {
             tileRects[i].set(x, y, x + tw, y + th);
             x += tw + gap;
+            if (shelfLabel != null) {
+                fitPaint.set(shelfLabel);
+                shelfLabels[i] = TextUtils.ellipsize(shelf.get(i).label, fitPaint, tw + 12 * k, TextUtils.TruncateAt.END).toString();
+            } else shelfLabels[i] = shelf.get(i).label;
         }
         crispLogos.clear();
     }
 
     /** Shelf layer: the glass bar and its shadow (it only changes with the background). */
     private void drawPlatter(Canvas c) {
-        if (shelf.isEmpty()) return;
-        float radius = (TILE_RADIUS + SHELF_PAD) * k;
-        tmp.set(platterRect);
-        tmp.offset(0, 18 * k);
-        shadow.setColor(tone(0x1F000000, 0x52000000));
-        shadows.draw(c, tmp, radius, SHADOW_BLUR * k, shadow);
-        // White glass by day; smoked glass at night.
-        scene.liquid(c, platterRect, radius, tone(0xFFFFFFFF, SMOKE), tone(0.42f, 0.12f), tone(0.03f, 0.08f),
-                tone(30, 34) * k, tone(22, 28) * k, tone(0.65f, 0.95f), 1);
+        if (drawerItems.isEmpty()) return;
+        float x = w / 2f, y = h - 52 * k;
+        border.setColor(0xB3F7E7F3);
+        border.setStrokeWidth(2.5f * k);
+        border.setStrokeCap(Paint.Cap.ROUND);
+        c.drawLine(x - 10 * k, y - 4 * k, x, y + 4 * k, border);
+        c.drawLine(x, y + 4 * k, x + 10 * k, y - 4 * k, border);
+        border.setStrokeWidth(2 * k);
+        border.setStrokeCap(Paint.Cap.BUTT);
     }
 
     /** The quotes row's text and sizes, for one set of coins, prices and text size. */
@@ -1211,7 +1288,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float cap = q.cap, gap = (clock ? 8 : 6) * k, spacing = (clock ? 32 : 24) * k;
         float total = spacing * (n - 1);
         for (int i = 0; i < n; i++) total += q.glyphs[i] + gap + q.widths[i];
-        float x = clock ? MARGIN * k : right - total;
+        float x = clock ? (w - total) / 2 : right - total;
         int coinColor = clock ? text.getColor() : Ui.alpha(tone(0xB38E8E93, 0x8CFFFFFF), fade);
         for (int i = 0; i < n; i++) {
             Glyphs.coin(getContext(), c, HomeData.COINS[coins[i]], x + q.glyphs[i] / 2, base - cap / 2, cap, coinColor);
@@ -1258,66 +1335,37 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /**
-     * App icon like the ones in the tvOS 27 Dock: the brand color edge to edge (a soft gradient) with the logo.
-     * Focused: it grows 20% from the center, with a deep shadow (it "rises" toward the viewer) and a subtle glow at the
-     * top. No border and no reflection, as Apple does it.
+     * Floating app artwork with a label and a small pink focus underline.
      */
     private void drawShelfTile(Canvas c, int i) {
         HomeApps.Item it = shelf.get(i);
-        // Lifted to be moved: a little bigger than focused, with a deeper shadow.
         float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
         float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f + LIFT_GROW * l;
         RectF base = tileRects[i];
-        float bw = base.width(), bh = base.height(), r0 = TILE_RADIUS * k;
         float cx = base.centerX(), cy = base.centerY();
-        cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
-        float r = r0 * s;
-        // Shadow at the resting icon size, enlarged by the transform (so the blur stays cached): short at rest, deep
-        // and lower when focused.
-        c.save();
-        c.translate(cx, cy);
-        c.scale(s, s);
-        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-        tmp.offset(0, (4 + 14 * f + 6 * l) * k);
-        shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.3f) + tone(0.18f, 0.3f) * fc + 0.14f * Ui.clamp(l)));
-        shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
-        c.restore();
+        cell.set(cx - base.width() * s / 2, cy - base.height() * s / 2,
+                cx + base.width() * s / 2, cy + base.height() * s / 2);
         int[] style = TILE_STYLE.get(it.key);
-        if (it.logo != null && style != null) {
-            if (tileShaders.length != shelf.size() || tileShaderH != bh) {
-                tileShaders = new LinearGradient[shelf.size()];
-                tileShaderH = bh;
-                tileGlow = new LinearGradient(0, -bh / 2, 0, 0, 0x14FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
-            }
-            if (tileShaders[i] == null) {
-                tileShaders[i] = new LinearGradient(0, -bh / 2, 0, bh / 2, style[0], style[1], Shader.TileMode.CLAMP);
-            }
-            c.save();
-            c.translate(cx, cy);
-            c.scale(s, s);
-            tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-            tileFill.setShader(tileShaders[i]);
-            tileFill.setAlpha(255);
-            c.drawRoundRect(tmp, r0, r0, tileFill);
-            if (fc > 0.01f) {
-                tileFill.setShader(tileGlow);
-                tileFill.setAlpha(Math.round(255 * fc));
-                c.drawRoundRect(tmp, r0, r0, tileFill);
-                tileFill.setAlpha(255);
-            }
-            tileFill.setShader(null);
-            c.restore();
-            drawLogo(c, it, cell, s, style[2]);
-        } else if (it.logo != null) {
-            tileFill.setShader(null);
-            tileFill.setColor(0xFF161618);
-            c.drawRoundRect(cell, r, r, tileFill);
-            drawLogo(c, it, cell, s, 0);
-        } else {
-            if (it.tile != null) roundImage(c, it.tile, cell, r);
+        if (it.logo != null) {
+            drawLogo(c, it, cell, s, style == null ? 0 : style[2]);
+        } else if (it.symbol != null || "com.android.tv.settings".equals(it.pkg)) {
+            Symbols.draw(getContext(), c, it.symbol != null ? it.symbol : "settings",
+                    cx, cy - 15 * k * s, 66 * k * s, WHITE);
+        } else if (it.tile != null) {
+            float fit = Math.min(cell.width() * 0.8f / it.tile.getWidth(), cell.height() * 0.65f / it.tile.getHeight());
+            float iw = it.tile.getWidth() * fit, ih = it.tile.getHeight() * fit;
+            tmp.set(cx - iw / 2, cy - ih / 2 - 15 * k * s, cx + iw / 2, cy + ih / 2 - 15 * k * s);
+            c.drawBitmap(it.tile, null, tmp, bitmapPaint);
+        }
+        shelfLabel.setColor(blend(0xD9F4EAF5, WHITE, fc));
+        if (i < shelfLabels.length) c.drawText(shelfLabels[i], cx, cell.bottom - 19 * k * s, shelfLabel);
+        if (fc > 0.01f) {
+            border.setColor(Ui.alpha(0xFFFF67DB, fc));
+            border.setStrokeWidth(3 * k);
+            c.drawLine(cx - 22 * k, cell.bottom - 4 * k, cx + 22 * k, cell.bottom - 4 * k, border);
+            border.setStrokeWidth(2 * k);
         }
     }
-
     /**
      * `image` stretched over `cell`, with corners of radius `r`. Android 12+ clips to the rounded shape; on Android 9 to
      * 11 that anti-aliased clip costs the GPU a mask on every frame of a focus animation (measured on a Mi Box 3: most of
@@ -1357,7 +1405,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (logo == null) return;
         float scale = rest ? s : s / (1 + FOCUS_GROW);
         float dw = logo.getWidth() * scale, dh = logo.getHeight() * scale;
-        float left = box.centerX() - dw / 2, top = box.centerY() - dh / 2;
+        float left = box.centerX() - dw / 2, top = box.centerY() - dh / 2 - 15 * k * s;
         if (rest ? Math.abs(scale - 1) < 0.002f : scale > 0.998f) {
             left = Math.round(left);
             top = Math.round(top);
@@ -2645,6 +2693,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * same photo almost black (or a dark gradient), drawn on top during the transition.
      */
     private void drawLightSky(Canvas c) {
+        if (!picksOn()) {
+            c.drawColor(0xFF07101F);
+            if (wallpaper != null) c.drawBitmap(wallpaper, null, screen, imagePaint);
+            fill.setShader(wallpaperShade);
+            fill.setAlpha(255);
+            c.drawRect(screen, fill);
+            fill.setShader(null);
+            if (drawer.value > 0.01f) {
+                fill.setColor(Ui.alpha(0xFF030914, Ui.clamp(drawer.value) * 0.5f));
+                c.drawRect(screen, fill);
+            }
+            return;
+        }
         long up = SystemClock.uptimeMillis();
         float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
         boolean fading = bgFadeAt != 0;
@@ -2682,6 +2743,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawLightTop(Canvas c) {
         applyTone();
         if (!picksOn()) {
+            fill.setShader(null);
+            fill.setColor(0x28FF48D7);
+            c.drawRoundRect(75 * k, 80 * k, 85 * k, 144 * k, 5 * k, 5 * k, fill);
+            fill.setColor(0xFFFF54D8);
+            c.drawRoundRect(78 * k, 82 * k, 82 * k, 142 * k, 2 * k, 2 * k, fill);
+            c.drawText("Free My TV", (MARGIN + 24) * k, 110 * k, homeBrand);
+            c.drawText("by KowalskiJr", (MARGIN + 24) * k, 143 * k, homeSignature);
             drawClock(c);
             if (HomeData.coinCount() > 0) drawQuotes(c);
             return;
@@ -2724,26 +2792,43 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawClock(Canvas c) {
-        float x = MARGIN * k;
-        c.drawText(dateText, x - Ui.leftBearing(lDate, dateText), L_DATE_BASE * k, lDate);
-        c.drawText(clockText, x - Ui.leftBearing(lClock, clockText), L_CLOCK_BASE * k, lClock);
+        c.drawText(dateText, w / 2f, L_DATE_BASE * k, lDate);
+        if (wallpaperGlass != null) c.drawText(clockText, w / 2f, L_CLOCK_BASE * k, clockFrost);
+        c.drawText(clockText, w / 2f, L_CLOCK_BASE * k, lClock);
         HomeData.Weather wx = data.weather;
         if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
         if (data.weatherAt != weatherLineAt || Prefs.version != weatherLinePrefs || !Ui.language.equals(weatherLineLanguage)) {
             weatherLineAt = data.weatherAt;
             weatherLinePrefs = Prefs.version;
             weatherLineLanguage = Ui.language;
-            weatherLine = HomeData.degrees(wx.temp) + "  " + HomeData.condition(wx.code, wx.isDay) + "   "
-                    + (Ui.ru ? "Макс. " + HomeData.degrees(wx.max) + "  Мин. " + HomeData.degrees(wx.min)
+            weatherLine = HomeData.degrees(wx.temp) + "  " + HomeData.condition(wx.code, wx.isDay);
+            weatherRange = (Ui.ru ? "Макс. " + HomeData.degrees(wx.max) + "  Мин. " + HomeData.degrees(wx.min)
                     : Ui.en ? "H:" + HomeData.degrees(wx.max) + "  L:" + HomeData.degrees(wx.min)
                     : Ui.de ? "H:" + HomeData.degrees(wx.max) + "  T:" + HomeData.degrees(wx.min)
                     : "Máx. " + HomeData.degrees(wx.max) + "  Mín. " + HomeData.degrees(wx.min));
+            weatherMainWidth = lWeather.measureText(weatherLine);
+            weatherRangeWidth = lWeather.measureText(weatherRange);
         }
-        float size = 40 * k, base = L_WEATHER_BASE * k;
+        float size = 38 * k, base = L_WEATHER_BASE * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
         float sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
-        c.drawText(weatherLine, x + sw + 16 * k, base, lWeather);
+        float capsuleWidth = 52 * k + sw + 18 * k + weatherMainWidth + 48 * k + weatherRangeWidth;
+        float x = (w - capsuleWidth) / 2;
+        float textX = x + 26 * k + sw + 18 * k;
+        float dividerX = textX + weatherMainWidth + 24 * k;
+        tmp.set(x, base - 48 * k, dividerX + 24 * k + weatherRangeWidth + 26 * k, base + 24 * k);
+        if (wallpaperGlass != null) c.drawRoundRect(tmp, 36 * k, 36 * k, glassPaint);
+        fill.setShader(weatherGlass);
+        fill.setAlpha(255);
+        c.drawRoundRect(tmp, 36 * k, 36 * k, fill);
+        fill.setShader(null);
+        border.setColor(0x50F8D4EE);
+        c.drawRoundRect(tmp, 36 * k, 36 * k, border);
+        c.drawLine(dividerX, base - 26 * k, dividerX, base + 4 * k, border);
+        lWeather.setColor(0xFFF4EFF8);
+        Symbols.draw(getContext(), c, symbol, x + 26 * k + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
+        c.drawText(weatherLine, textX, base, lWeather);
+        c.drawText(weatherRange, dividerX + 24 * k, base, lWeather);
     }
 
     /**
