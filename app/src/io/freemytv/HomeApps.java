@@ -136,10 +136,16 @@ final class HomeApps {
             it.kind = APP;
             it.pkg = pkg;
             if (d == null) {
-                // An app picked in Settings > Shelf that isn't in SHELF: its own name and TV art.
+                // Custom shelf apps use their native icon; TV banners contain text that becomes tiny in a tile.
                 it.key = pkg;
                 it.label = ri != null ? String.valueOf(ri.loadLabel(pm)) : pkg;
-                it.tile = appTile(c, null, pkg, 0);
+                if ("com.android.tv.settings".equals(pkg)) {
+                    it.symbol = "settings";
+                } else {
+                    it.logo = shelfAppIcon(c, pkg, extract);
+                    if (it.logo != null) it.logoInk = ink(it.logo);
+                    else it.tile = appTile(c, null, pkg, 0);
+                }
             } else {
                 it.key = d[0];
                 it.label = d[1];
@@ -489,6 +495,32 @@ final class HomeApps {
 
     /** Bump when the way logos are lifted changes (the ones saved on disk are redone). */
     private static final int LOGO_VERSION = 2;
+
+    /** Native foreground artwork for custom shelf apps, loaded only by the background reload. */
+    private static Bitmap shelfAppIcon(Context c, String pkg, boolean extract) {
+        String key = "app-icon:" + pkg;
+        synchronized (LOGOS) {
+            if (LOGOS.containsKey(key)) return LOGOS.get(key);
+        }
+        if (!extract) return null;
+        Bitmap logo = null;
+        try {
+            Drawable icon = c.getPackageManager().getApplicationIcon(pkg);
+            if (icon instanceof AdaptiveIconDrawable) icon = ((AdaptiveIconDrawable) icon).getForeground();
+            if (icon != null) {
+                Bitmap image = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888);
+                icon.setBounds(0, 0, 256, 256);
+                icon.draw(new Canvas(image));
+                logo = trim(image);
+                if (logo != image) image.recycle();
+                logo.setHasMipMap(true);
+            }
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            AppLog.w("app icon unavailable: " + pkg);
+        }
+        synchronized (LOGOS) { LOGOS.put(key, logo); }
+        return logo;
+    }
 
     private static Bitmap shelfLogo(Context c, String key, String pkg, String mode, boolean extract) {
         synchronized (LOGOS) {

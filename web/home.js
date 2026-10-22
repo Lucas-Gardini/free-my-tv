@@ -2,9 +2,9 @@
  * The home screen for web-app TVs (LG webOS, Samsung Tizen), with the Android app's design and behavior (HomeView):
  *  - top: the "For You" title and the tabs (Explore, Movies, Shows); icon-only glass buttons at the right (Live TV,
  *    HDMI Inputs, Settings) and the crypto quotes at the end of the tab row;
- *  - three picks for this hour in the selected tab; the background is the first one's photo, blurred and almost white;
+ *  - three picks for this hour in the selected tab over the local wallpaper;
  *  - the glass shelf with the apps; ↓ opens the drawer (inputs, shortcuts, weather, prices); ↑ or Back closes it;
- *  - a night look from sunset to sunrise; a screensaver after a few idle minutes.
+ *  - a dark navy home; a screensaver after a few idle minutes.
  * The remote's arrows, OK and Back move the focus; a pointer (LG's Magic Remote) focuses what it points at.
  */
 (function () {
@@ -94,13 +94,14 @@
     return Math.max(18, Math.min(max, Math.floor(width * 0.8 / (Math.max(4, title.length) * 0.56))));
   }
 
-  /** An app's face: its own icon on its brand color (or its name, when the icon can't be read). */
+  /** Keep real app artwork; the shelf shares a quiet dark glass surface. */
   function face(app, box, wordSize) {
     var k = shelfKey(app);
-    var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
-    var bottom = k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
-    box.style.background = '-webkit-linear-gradient(top, ' + top + ', ' + bottom + ')';
-    box.style.background = 'linear-gradient(' + top + ', ' + bottom + ')';
+    var quiet = hasClass(box, 'tile');
+    var top = quiet ? 'rgba(43,28,53,0.52)' : k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
+    var bottom = quiet ? 'rgba(16,14,29,0.72)' : k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
+    box.style.background = quiet ? 'none' : '-webkit-linear-gradient(top, ' + top + ', ' + bottom + ')';
+    if (!quiet) box.style.background = 'linear-gradient(' + top + ', ' + bottom + ')';
     var word = el('div', 'word', box, app.title);
     if (wordSize) word.style.fontSize = wordSize + 'px';
     if (app.icon) {
@@ -162,6 +163,11 @@
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
+    updateMoreHint();
+  }
+
+  function updateMoreHint() {
+    setClass($('more-hint'), 'show', !!(drawerItems && drawerItems.length) && st.zone !== Z.DRAWER && !sheetOpen() && !saverOn);
   }
 
   function focusRows(sheet, index, on) {
@@ -248,67 +254,46 @@
     }
     st.card = Math.min(st.card, Math.max(0, list.length - 1));
     if (!list.length && st.zone === Z.CARDS) st.zone = Z.SHELF;
-    backdrop(list.length ? Data.image(list[0].backdrop, 'w300') : '');
     updateFocus();
-  }
-
-  var bgUrl = null, bgFront = 'bgA';
-
-  /** The first pick's photo as the background: drawn tiny and stretched, it's already as soft as a heavy blur. */
-  function backdrop(url) {
-    if (url === bgUrl) return;
-    bgUrl = url;
-    var next = bgFront === 'bgA' ? 'bgB' : 'bgA';
-    if (!url) {
-      setClass($('bgA'), 'on', false);
-      setClass($('bgB'), 'on', false);
-      return;
-    }
-    var img = new Image();
-    img.onload = function () {
-      if (bgUrl !== url) return;
-      var canvas = $(next), ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      setClass(canvas, 'on', true);
-      setClass($(bgFront), 'on', false);
-      bgFront = next;
-    };
-    img.src = url;
   }
 
   function renderClock() {
     var d = new Date(), c = $('clock');
-    c.firstChild.textContent = Data.time(d.getTime());
+    c.querySelector('.time').textContent = Data.time(d.getTime());
     try {
-      c.lastChild.textContent = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
+      c.querySelector('.date').textContent = d.toLocaleDateString(I18N.locale(), {weekday: 'long', day: 'numeric', month: 'long'});
     } catch (e) {
-      c.lastChild.textContent = d.toDateString();
+      c.querySelector('.date').textContent = d.toDateString();
+    }
+    var weather = c.querySelector('.weather'), w = Data.weather;
+    weather.innerHTML = '';
+    if (Prefs.weather() && w && typeof w.temp === 'number' && isFinite(w.temp)) {
+      sym(Data.symbol(w.code, w.isDay), weather, 25);
+      weather.appendChild(document.createTextNode(Data.degrees(w.temp) + '  ' + Data.condition(w.code, w.isDay)));
+      if (typeof w.max === 'number' && isFinite(w.max) && typeof w.min === 'number' && isFinite(w.min)) {
+        el('span', 'range', weather, '\u2191 ' + Data.degrees(w.max) + '   \u2193 ' + Data.degrees(w.min));
+      }
     }
   }
 
   // MARK: - Shelf
 
   function renderShelf() {
-    var n = shelf.length, gap = 48, pad = 40;
-    // 16:9 tiles, as on Android: never taller than 126, and the glass keeps its bottom edge.
-    var tw = Math.min(126 * 16 / 9, (1760 - Math.max(0, n - 1) * gap) / Math.max(1, n)), th = tw * 9 / 16;
+    var n = shelf.length, gap = 28;
+    var tw = Math.min(184, (1760 - Math.max(0, n - 1) * gap) / Math.max(1, n)), th = tw * 0.86;
     var width = n * tw + Math.max(0, n - 1) * gap, left = (1920 - width) / 2;
     var platter = $('platter');
-    platter.style.display = n ? '' : 'none';
-    platter.style.left = (left - pad) + 'px';
-    platter.style.width = (width + 2 * pad) + 'px';
-    platter.style.top = (814 + 126 - th) + 'px';
-    platter.style.height = (th + 2 * pad) + 'px';
-    $('quotes').style.right = (1920 - left - width) + 'px';
+    platter.style.display = 'none';
     var tiles = $('tiles');
     tiles.innerHTML = '';
     for (var i = 0; i < n; i++) {
       var t = el('div', 'tile', tiles);
       t.style.left = (left + i * (tw + gap)) + 'px';
-      t.style.top = (854 + 126 - th) + 'px';
+      t.style.top = '778px';
       t.style.width = tw + 'px';
       t.style.height = th + 'px';
       face(shelf[i], t, wordFit(shelf[i].title, tw, 30));
+      el('div', 'app-name', t, shelf[i].title);
       hover(t, Z.SHELF, i);
     }
     st.shelf = Math.min(st.shelf, Math.max(0, n - 1));
@@ -352,6 +337,7 @@
   }
 
   function renderPanels() {
+    renderClock();
     var d = $('drawer');
     var old = d.querySelectorAll('.panel');
     for (var o = 0; o < old.length; o++) d.removeChild(old[o]);
@@ -755,6 +741,7 @@
   function showSaver() {
     var photos = Data.showcase().filter(function (p) { return p.backdrop && Data.appFor(p.app); });
     saverOn = true;
+    updateMoreHint();
     var s = $('saver');
     s.innerHTML = '';
     var a = el('div', 'photo', s), b = el('div', 'photo', s);
@@ -798,6 +785,7 @@
 
   function hideSaver() {
     saverOn = false;
+    updateMoreHint();
     clearTimeout(saverTimer);
     setClass($('saver'), 'on', false);
   }
