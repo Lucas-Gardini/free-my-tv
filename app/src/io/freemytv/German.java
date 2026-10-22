@@ -6,6 +6,9 @@ final class German {
 
     static String text(String english) {
         switch (english) {
+            case "Couldn't identify the TV's original home screen.": return "Der ursprüngliche Startbildschirm des Fernsehers konnte nicht ermittelt werden.";
+            case "Couldn't verify saved Wi-Fi networks. No apps will be turned off.": return "Gespeicherte WLAN-Netze konnten nicht geprüft werden. Es werden keine Apps ausgeschaltet.";
+            case "Couldn't save recovery settings.": return "Die Wiederherstellungsdaten konnten nicht gespeichert werden.";
             case "Live TV": return "Live-TV";
             case "All Apps": return "Alle Apps";
             case "Settings": return "Einstellungen";

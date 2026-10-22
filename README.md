@@ -178,7 +178,8 @@ It's your code, and Claude Code finds its way around it. Try:
 - **A plain Android app, no Gradle, no libraries.** [`build.sh`](build.sh) runs aapt2 → javac → d8 → zipalign → apksigner and makes a 2 MB APK.
 - **It uses the TV's own ADB, from inside the TV.** The app connects to `127.0.0.1:5555` with its own key (that's the *Allow USB debugging?* prompt) and runs the same commands you would: `cmd package set-home-activity`, `settings put secure screensaver_components`, `pm disable-user`. Nothing listens to the network.
 - **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 9 to 12, with lighter shadows and no GPU layers on 9 to 11 for their older GPUs).
-- **A safety net.** A watchdog in a separate process brings back the stock home screen after three crashes in five minutes, and a boot check keeps your choice after TV updates.
+- **A safety net.** A watchdog in a separate process brings back the stock home screen after three Java crashes in five minutes, and a boot check keeps your choice after TV updates. Both recovery and switching require the TV's ADB to remain enabled and authorized; the watchdog does not detect every freeze or native crash.
+- **Recovery before changes.** Switching stops if the saved Wi-Fi networks cannot be checked or recovery data cannot be saved. Original components, user-disabled packages and a journal of packages to disable are also stored in the TV's settings, so Original can repair a partial switch after the app's data is lost. Original can always be selected again. Older installs acquire the metadata backup on their next successful boot/update check or switch; metadata already lost before that backup cannot be reconstructed exactly.
 - **On LG and Samsung, the same design in plain HTML, CSS and JavaScript** ([`web/`](web)), written for the Chromium of older TVs, with no frameworks. [`webos/build.py`](webos/build.py) packs it with `config.properties` into an `.ipk` without LG's tools, and [`webos/install.py`](webos/install.py) installs it through Developer Mode; on LG it lists and opens apps through the TV's own service bus (Luna), as LG's launcher does. [`tizen/build.py`](tizen/build.py) packs the same app into a Samsung `.wgt`, which uses Tizen's web APIs for the apps and the inputs. To preview it on a computer: `python3 webos/build.py --preview`, then open `out/webos/index.html` (a stand-in lists sample apps).
 - **Data** from TMDB (trending titles, new releases and which app streams what in your country), Open-Meteo (forecast, sunrise and sunset), and optionally Binance (24-hour prices when `show_crypto=true`).
 
@@ -201,6 +202,10 @@ It's your code, and Claude Code finds its way around it. Try:
 | [`tizen/build.py`](tizen/build.py) | The Samsung app package |
 
 The website ([freemytv.io](https://freemytv.io)) is in [`docs/`](docs): plain HTML, CSS and JS on GitHub Pages.
+
+### Android regression tests
+
+Run `bash tests/home-mode.sh` with JDK 17+, curl and sha256sum available (`JAVA_HOME` may select the JDK). The tests run the real `HomeMode` against a simulated ADB transport and temporary files, covering incomplete Wi-Fi diagnostics, failed recovery writes, interrupted switches, lost local state and Original recovery. They do not connect to a TV. A checksum-verified JSON library is downloaded into ignored `out/tests/` for the host tests only; the Android app still has no library dependencies. Run `bash build.sh` separately with the Android SDK to validate the APK.
 
 ## Privacy
 

@@ -3,6 +3,7 @@ package io.freemytv;
 import android.content.Context;
 import android.os.Build;
 import android.os.SystemClock;
+import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -13,6 +14,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -176,7 +179,7 @@ final class HomeMode {
     static void ensureRemoteServiceNow(Context app) {
         if (!RemoteKeys.supported() || !FREE.equals(state(app).optString("mode"))) return;
         try (Adb adb = Adb.connect(app, 10_000, null)) {
-            remoteService(app, adb, true);
+            remoteService(app, adb, true, state(app));
         } catch (IOException e) {
             AppLog.w("remote buttons service: " + e.getMessage());
         }
@@ -186,7 +189,7 @@ final class HomeMode {
     private static final Pattern SERVICE = Pattern.compile("[\\w.]+/[\\w.$]+");
 
     /** Adds ours to the enabled accessibility services (keeping the others, like TalkBack), or takes it out. */
-    private static void remoteService(Context c, Adb adb, boolean on) throws IOException {
+    private static void remoteService(Context c, Adb adb, boolean on, JSONObject recovery) throws IOException {
         String current = adb.shell("settings get secure enabled_accessibility_services").trim();
         if (current.equals("null")) current = "";
         List<String> others = new ArrayList<>();
@@ -199,19 +202,26 @@ final class HomeMode {
             }
             others.add(one);
         }
-        if (on == current.contains(REMOTE_SERVICE)) return;
+        if (on == current.contains(REMOTE_SERVICE)) {
+            if (!on && others.isEmpty() && recovery.optBoolean("accessibilityWasOff")) {
+                adb.shell("settings put secure accessibility_enabled 0");
+            }
+            return;
+        }
         List<String> list = new ArrayList<>(others);
         if (on) {
             JSONObject s = state(c);
             try { s.put("accessibilityWasOff", !"1".equals(adb.shell("settings get secure accessibility_enabled").trim())); }
             catch (JSONException ignored) {}
-            save(c, s);
+            saveRequired(c, s);
+            try { backupRecovery(adb, s); }
+            catch (JSONException e) { throw new IOException(e); }
             list.add(REMOTE_SERVICE);
         }
         adb.shell(list.isEmpty() ? "settings delete secure enabled_accessibility_services"
                 : "settings put secure enabled_accessibility_services '" + String.join(":", list) + "'");
         if (on) adb.shell("settings put secure accessibility_enabled 1");
-        else if (list.isEmpty() && state(c).optBoolean("accessibilityWasOff")) adb.shell("settings put secure accessibility_enabled 0");
+        else if (list.isEmpty() && recovery.optBoolean("accessibilityWasOff")) adb.shell("settings put secure accessibility_enabled 0");
         AppLog.w("remote buttons service " + (on ? "on" : "off"));
     }
 
@@ -226,6 +236,7 @@ final class HomeMode {
     private static void applyFree(Context c) {
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
+            s = recoveryState(adb, state(c));
             // The TV's own home screen and screensaver, recorded once (before ours replace them) so "original" restores
             // exactly what was there, on any brand.
             String home = originalHome(s);
@@ -236,10 +247,11 @@ final class HomeMode {
             String dream = originalDream(s);
             if (dream.isEmpty()) dream = defaultDream(adb);
             JSONObject latest = state(c);
+            copyRecovery(s, latest);
             latest.put("originalHome", home).put("originalDream", dream);
             String saver = adb.shell("settings get secure screensaver_components").trim();
             if (!saver.contains(PKG + "/")) latest.put("originalScreensaver", safeComponents(saver));
-            save(c, latest);
+            saveRequired(c, latest);
             // Turning off an app makes Android delete the Wi-Fi networks it saved (#14), and Original can't bring them
             // back. The TV's first setup usually saved the network: then stop here, before anything changes.
             Set<String> owners = wifiOwners(adb);
@@ -255,6 +267,9 @@ final class HomeMode {
                         + "En Ajustes → Red e Internet, olvida la red y vuelve a conectarte (las fuera de alcance no aparecen "
                         + "ahí: Claude Code las borra desde la computadora) y vuelve a intentarlo."));
             }
+            if (home.isEmpty()) throw new IOException(Ui.tr("Não consegui identificar o Início original da TV.",
+                    "Couldn't identify the TV's original home screen.", "No pude identificar el Inicio original del TV."));
+            backupRecovery(adb, latest);
             if (metrics(latest, ORIGINAL) == null && !home.isEmpty()) {
                 busy(c, Ui.tr("Medindo o Início original…", "Measuring the original home screen…"));
                 measureHomeTime(c, adb, ORIGINAL);
@@ -267,7 +282,7 @@ final class HomeMode {
             adb.shell("settings put secure screensaver_components " + DREAM);
             JSONObject started = state(c);
             started.put("mode", FREE).put("homeReverted", false).put("setupHome", setupHome);
-            save(c, started);
+            saveRequired(c, started);
             List<String> targets = targets(home, dream, setupHome);
             Set<String> disabled = new HashSet<>(stringList(state(c), "disabled"));
             Set<String> present = packages(adb, "");
@@ -275,18 +290,28 @@ final class HomeMode {
             // Off now and not on our list: the person turned it off, unless an earlier install of Free My TV did (its
             // list lives in the TV's settings too, since an uninstall erases our state file).
             Set<String> ours = recorded(adb);
+            disabled.addAll(ours);
+            // A completed Original switch starts a new baseline for the user's disabled apps.
+            if (ORIGINAL.equals(s.optString("mode")) && ours.isEmpty()) keptOff.clear();
             for (String pkg : packages(adb, "-d")) {
                 if (targets(home, dream, true).contains(pkg) && !disabled.contains(pkg) && !ours.contains(pkg)) keptOff.add(pkg);
             }
             keptOff.removeAll(ours);
             JSONObject before = state(c);
             before.put("keptOff", new JSONArray(sorted(keptOff)));
-            save(c, before);
+            saveRequired(c, before);
+            backupRecovery(adb, before);
             int done = 0;
             for (String pkg : targets) {
                 done++;
                 busy(c, Ui.tr("Desligando apps (", "Turning off apps (") + done + "/" + targets.size() + ")…");
                 if (PROTECTED.contains(pkg) || !present.contains(pkg) || owners.contains(pkg) || keptOff.contains(pkg)) continue;
+                // Journal intent before the command: ADB can disconnect after Android has already disabled it.
+                disabled.add(pkg);
+                JSONObject pending = state(c);
+                pending.put("disabled", new JSONArray(sorted(disabled)));
+                saveRequired(c, pending);
+                recordRequired(adb, disabled);
                 String out = adb.shell("pm disable-user --user 0 " + pkg);
                 if (out.contains("disabled-user")) {
                     disabled.add(pkg);
@@ -304,7 +329,7 @@ final class HomeMode {
             save(c, s);
             if (RemoteKeys.supported()) {
                 try {
-                    remoteService(c, adb, true);
+                    remoteService(c, adb, true, state(c));
                 } catch (IOException e) {
                     AppLog.w("remote buttons service: " + e.getMessage());
                 }
@@ -324,9 +349,11 @@ final class HomeMode {
     private static void applyOriginal(Context c) {
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
+            s = recoveryState(adb, state(c));
             busy(c, Ui.tr("Religando os apps…", "Turning the apps back on…"));
             String home = originalHome(s);
             Set<String> toEnable = new HashSet<>(stringList(s, "disabled"));
+            toEnable.addAll(recorded(adb));
             for (String pkg : targets(home, originalDream(s), true)) {
                 if (!Arrays.asList(DEBLOAT).contains(pkg) && !Arrays.asList(ASSISTANT).contains(pkg)) toEnable.add(pkg);
             }
@@ -347,7 +374,7 @@ final class HomeMode {
             boolean homeOk = restoreHome(adb, home);
             restoreScreensaver(adb, s);
             try {
-                remoteService(c, adb, false);
+                remoteService(c, adb, false, s);
             } catch (IOException e) {
                 AppLog.w("remote buttons service: " + e.getMessage());
             }
@@ -390,6 +417,7 @@ final class HomeMode {
         synchronized (RUN) {
             JSONObject s = state(app);
             try (Adb adb = Adb.connect(app, 10_000, null)) {
+                s = recoveryState(adb, s);
                 boolean ours = homeHolder(adb).contains(PKG);
                 if (!ours && (!FREE.equals(s.optString("mode")) || s.optBoolean("homeReverted"))) return;
                 String home = originalHome(s);
@@ -403,7 +431,9 @@ final class HomeMode {
                 if (dreamPkg != null && !keptOff.contains(dreamPkg)) adb.shell("pm enable " + dreamPkg);
                 JSONArray kept = new JSONArray();
                 Set<String> stillOff = new HashSet<>();
-                for (String pkg : stringList(s, "disabled")) {
+                Set<String> recordedDisabled = new HashSet<>(stringList(s, "disabled"));
+                recordedDisabled.addAll(recorded(adb));
+                for (String pkg : sorted(recordedDisabled)) {
                     if (!pkg.equals(GOOGLE_SETUP) && !pkg.equals(homePkg) && !pkg.equals(dreamPkg)) {
                         kept.put(pkg);
                         stillOff.add(pkg);
@@ -441,9 +471,11 @@ final class HomeMode {
             if (!FREE.equals(s.optString("mode"))) return;
             List<String> fixed = new ArrayList<>();
             try (Adb adb = Adb.connect(app, 10_000, null)) {
+                s = recoveryState(adb, s);
                 Set<String> present = packages(adb, "");
                 Set<String> disabledNow = packages(adb, "-d");
                 Set<String> owners = wifiOwners(adb);
+                backupRecovery(adb, s);
                 boolean reverted = s.optBoolean("homeReverted");
                 String home = originalHome(s);
                 Set<String> wanted = new HashSet<>(stringList(s, "disabled"));
@@ -454,6 +486,8 @@ final class HomeMode {
                     }
                 }
                 Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
+                disabled.addAll(recorded(adb));
+                wanted.addAll(disabled);
                 // Off before Free My TV: turned off again if a TV update brings one back, but never handed to
                 // Original to turn on.
                 List<String> keptOff = stringList(s, "keptOff");
@@ -463,8 +497,12 @@ final class HomeMode {
                         if (!keptOff.contains(pkg)) disabled.add(pkg);
                         continue;
                     }
+                    if (!keptOff.contains(pkg)) disabled.add(pkg);
+                    JSONObject pending = state(app);
+                    pending.put("disabled", new JSONArray(sorted(disabled)));
+                    saveRequired(app, pending);
+                    recordRequired(adb, disabled);
                     if (adb.shell("pm disable-user --user 0 " + pkg).contains("disabled-user")) {
-                        if (!keptOff.contains(pkg)) disabled.add(pkg);
                         fixed.add(pkg);
                     }
                 }
@@ -546,10 +584,36 @@ final class HomeMode {
 
     /** Apps that saved a Wi-Fi network ("cname" in the Wi-Fi service's list of saved networks). */
     private static Set<String> wifiOwners(Adb adb) throws IOException {
+        String dump = adb.shell("dumpsys wifi; echo FMTV_WIFI_EXIT:$?");
+        String begin = "WifiConfigManager - Configured networks Begin";
+        String end = "WifiConfigManager - Configured networks End";
+        int first = dump.indexOf(begin), last = dump.indexOf(end);
+        if (!dump.trim().endsWith("FMTV_WIFI_EXIT:0") || first < 0 || last <= first
+                || dump.contains("Exception occurred while dumping") || dump.contains("Permission Denial")) {
+            throw wifiUnknown();
+        }
         Set<String> owners = new HashSet<>();
-        Matcher m = Pattern.compile("cname=([\\w.]+)").matcher(adb.shell("dumpsys wifi | grep -o 'cname=[^ ]*'"));
-        while (m.find()) owners.add(m.group(1));
+        // Only saved networks count. Other parts of dumpsys may mention deleted or suggested networks.
+        String networks = dump.substring(first + begin.length(), last);
+        String[] entries = networks.split("(?m)^\\s*ID:", -1);
+        if (!entries[0].replace("-", "").trim().isEmpty()) throw wifiUnknown();
+        for (int i = 1; i < entries.length; i++) {
+            Matcher m = Pattern.compile("\\bcname=([^\\s]*)").matcher(entries[i]);
+            boolean found = false;
+            while (m.find()) {
+                if (!m.group(1).matches("[\\w.]+") || m.group(1).equals("null")) throw wifiUnknown();
+                owners.add(m.group(1));
+                found = true;
+            }
+            if (!found) throw wifiUnknown();
+        }
         return owners;
+    }
+
+    private static IOException wifiUnknown() {
+        return new IOException(Ui.tr("Não consegui verificar as redes Wi-Fi salvas. Nenhum app será desligado.",
+                "Couldn't verify saved Wi-Fi networks. No apps will be turned off.",
+                "No pude verificar las redes Wi-Fi guardadas. No se desactivará ninguna app."));
     }
 
     /** The recorded home screen of the TV, as {@link #realHome}. */
@@ -719,17 +783,20 @@ final class HomeMode {
     }
 
     static void save(Context c, JSONObject s) {
+        try { saveRequired(c, s); }
+        catch (IOException e) { AppLog.w("could not save the state: " + e.getMessage()); }
+    }
+
+    private static void saveRequired(Context c, JSONObject s) throws IOException {
         synchronized (FILE_LOCK) {
             File dir = c.getFilesDir();
             File tmp = new File(dir, "home-state.json.tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) {
                 out.write(s.toString().getBytes(StandardCharsets.UTF_8));
                 out.getFD().sync();
-            } catch (IOException e) {
-                AppLog.w("could not save the state: " + e.getMessage());
-                return;
             }
-            if (!tmp.renameTo(new File(dir, "home-state.json"))) AppLog.w("could not replace the state file");
+            Files.move(tmp.toPath(), new File(dir, "home-state.json").toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
     }
 
@@ -778,6 +845,50 @@ final class HomeMode {
      * and a new install must still tell its own work from what the person had turned off (#142).
      */
     private static final String RECORD = "free_my_tv_disabled";
+    private static final String RECOVERY = "free_my_tv_recovery";
+    private static final String[] RECOVERY_KEYS = {"originalHome", "originalDream", "originalScreensaver",
+            "keptOff", "accessibilityWasOff"};
+
+    private static void copyRecovery(JSONObject from, JSONObject to) throws JSONException {
+        for (String key : RECOVERY_KEYS) if (from.has(key)) to.put(key, from.get(key));
+    }
+
+    /** Survives Clear data and uninstall; contains only components and package names, never credentials. */
+    private static void backupRecovery(Adb adb, JSONObject state) throws IOException, JSONException {
+        JSONObject backup = new JSONObject();
+        copyRecovery(state, backup);
+        String value = Base64.encodeToString(backup.toString().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        putGlobalRequired(adb, RECOVERY, value);
+    }
+
+    private static JSONObject recoveryState(Adb adb, JSONObject state) throws IOException, JSONException {
+        String value = adb.shell("settings get global " + RECOVERY).trim();
+        if (value.isEmpty() || value.equals("null")) return state;
+        JSONObject backup;
+        try {
+            backup = new JSONObject(new String(Base64.decode(value, Base64.DEFAULT), StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException | JSONException e) {
+            // The optional backup must not block repair from local metadata and the package journal.
+            AppLog.w("invalid recovery backup; using local state");
+            return state;
+        }
+        for (String key : RECOVERY_KEYS) if (!state.has(key) && backup.has(key)) state.put(key, backup.get(key));
+        return state;
+    }
+
+    private static void putGlobalRequired(Adb adb, String key, String value) throws IOException {
+        adb.shell("settings put global " + key + " " + value);
+        if (!value.equals(adb.shell("settings get global " + key).trim())) {
+            throw new IOException(Ui.tr("Não consegui salvar os dados de recuperação.", "Couldn't save recovery settings.",
+                    "No pude guardar los datos de recuperación."));
+        }
+    }
+
+    private static void recordRequired(Adb adb, Set<String> disabled) throws IOException {
+        List<String> list = new ArrayList<>();
+        for (String pkg : sorted(disabled)) if (pkg.matches("[\\w.]+")) list.add(pkg);
+        if (!list.isEmpty()) putGlobalRequired(adb, RECORD, String.join(",", list));
+    }
 
     private static Set<String> recorded(Adb adb) {
         Set<String> out = new HashSet<>();
