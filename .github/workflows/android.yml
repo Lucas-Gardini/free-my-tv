@@ -1,0 +1,31 @@
+name: Android safety checks
+
+on:
+  pull_request:
+    paths: ["app/**", "tests/**", "build.sh", "config.example.properties", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Home mode regression tests
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          bash tests/home-mode.sh
+      - name: Build Android APK
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export ANDROID_HOME="$RUNNER_TEMP/android-sdk"
+          curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o "$RUNNER_TEMP/android-tools.zip"
+          echo "d313adb7aedccf6cf0cfca51ec180f0059f5f8f8  $RUNNER_TEMP/android-tools.zip" | sha1sum -c -
+          unzip -q "$RUNNER_TEMP/android-tools.zip" -d "$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"
+          (yes || true) | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "build-tools;34.0.0" "platforms;android-34"
+          bash build.sh

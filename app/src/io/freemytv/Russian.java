@@ -13,6 +13,9 @@ final class Russian {
 
     static String text(String english) {
         switch (english) {
+            case "Couldn't identify the TV's original home screen.": return "Не удалось определить исходный главный экран телевизора.";
+            case "Couldn't verify saved Wi-Fi networks. No apps will be turned off.": return "Не удалось проверить сохранённые сети Wi-Fi. Приложения не будут отключены.";
+            case "Couldn't save recovery settings.": return "Не удалось сохранить данные для восстановления.";
             case "Live TV": return "Телеканалы";
             case "All Apps": return "Приложения";
             case "Settings": return "Настройки";
