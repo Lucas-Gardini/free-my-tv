@@ -557,9 +557,9 @@ public class SettingsActivity extends Activity {
 
         private static String versionName(Context c) {
             try {
-                return "Free My TV " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+                return "Free My TV " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName + " by KowalskiJr";
             } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-                return "Free My TV";
+                return "Free My TV by KowalskiJr";
             }
         }
 
