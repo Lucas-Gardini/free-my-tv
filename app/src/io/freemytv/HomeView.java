@@ -47,13 +47,13 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * The custom home screen, with a quiet cinematic landscape and navy glass app tiles:
+ * The custom home screen, with a local wallpaper and floating app artwork:
  *  - at the top left, the "For You" title and the tabs (Explore, Movies, Shows); at the top right, icon-only glass
  *    buttons (Live TV, HDMI Inputs, Settings), with the focused one's name below it, and the small crypto quotes
  *    (logo + price) at the right end of the tab row;
  *  - three cards with the titles recommended for right now in the selected tab (Recs, from TMDB); the background is
- *    the first card's photo, heavily blurred (Backdrop); without picks, a local landscape behind the clock;
- *  - at the bottom, consistent app tiles with labels and a cyan/violet focus border;
+ *    a local wallpaper; without picks, a centered clock, date and weather;
+ *  - at the bottom, floating app artwork with labels and a pink focus underline;
  *  - ↓ on the shelf: everything moves up and the bottom drawer appears (inputs, shortcuts, weather for the next hours
  *    and quotes with the 24 h change); the background lightens (darkens at night). ↑ or Back closes it;
  *  - from sunset to sunrise, a night look: dark background, smoked glass and white text.
@@ -919,7 +919,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** No photo: the glass reads the background's own gray (not Scene's default aurora, which isn't on screen). */
     private void neutralGlass() {
-        int color = picksOn() ? blend(0xFFEBEBF0, 0xFF141416, night) : 0xFF102034;
+        int color = 0xFF102034;
         java.util.Arrays.fill(neutralFrostPx, color);
         java.util.Arrays.fill(neutralGlassPx, color);
         scene.setFrost(neutralFrostPx);
@@ -990,7 +990,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** How dark it is: 0 = day, 1 = night (in between during the transition). */
     private float dark() {
-        return picksOn() ? night : 1;
+        return 1;
     }
 
     /** The day color or the night color, depending on the night value (blended during the transition). */
@@ -2688,53 +2688,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroDirty = true;
     }
 
-    /**
-     * Background: the first card's photo, heavily blurred and almost white; without it, a light gradient. At night, the
-     * same photo almost black (or a dark gradient), drawn on top during the transition.
-     */
+    /** Keep the local wallpaper and readable dark palette with or without recommendations. */
     private void drawLightSky(Canvas c) {
-        if (!picksOn()) {
-            c.drawColor(0xFF07101F);
-            if (wallpaper != null) c.drawBitmap(wallpaper, null, screen, imagePaint);
-            fill.setShader(wallpaperShade);
-            fill.setAlpha(255);
+        c.drawColor(0xFF07101F);
+        if (wallpaper != null) c.drawBitmap(wallpaper, null, screen, imagePaint);
+        fill.setShader(wallpaperShade);
+        fill.setAlpha(255);
+        c.drawRect(screen, fill);
+        fill.setShader(null);
+        if (drawer.value > 0.01f) {
+            fill.setColor(Ui.alpha(0xFF030914, Ui.clamp(drawer.value) * 0.5f));
             c.drawRect(screen, fill);
-            fill.setShader(null);
-            if (drawer.value > 0.01f) {
-                fill.setColor(Ui.alpha(0xFF030914, Ui.clamp(drawer.value) * 0.5f));
-                c.drawRect(screen, fill);
-            }
-            return;
         }
-        long up = SystemClock.uptimeMillis();
-        float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
-        boolean fading = bgFadeAt != 0;
-        // Drawer open: the background lightens (by day) or darkens (at night), as a filter on the drawing itself.
-        android.graphics.ColorFilter v = veil(tone(0.32f, 0.42f) * Ui.clamp(drawer.value), blend(0xFFFFFFFF, 0xFF000000, night));
-        if (bgTo == null || (fading && bgFrom == null)) {
-            if (lightGradient == null) lightGradient = new LinearGradient(0, 0, 0, h, 0xFFF5F5F7, 0xFFE2E2E7, Shader.TileMode.CLAMP);
-            if (nightGradient == null) nightGradient = new LinearGradient(0, 0, 0, h, 0xFF1C1C1E, 0xFF0B0B0D, Shader.TileMode.CLAMP);
-            fill.setColorFilter(v);
-            fill.setColor(0xFF000000);
-            if (night < 0.999f) {
-                fill.setShader(lightGradient);
-                c.drawRect(screen, fill);
-            }
-            if (night > 0.001f) {
-                fill.setShader(nightGradient);
-                fill.setAlpha(Math.round(255 * night));
-                c.drawRect(screen, fill);
-                fill.setAlpha(255);
-            }
-            fill.setShader(null);
-            fill.setColorFilter(null);
-        }
-        imagePaint.setColorFilter(v);
-        if (fading && bgFrom != null) drawLightImage(c, bgFrom, bgTo == null ? 1 - e : 1);
-        if (bgTo != null) drawLightImage(c, bgTo, fading ? e : 1);
-        imagePaint.setColorFilter(null);
     }
-
     private void drawLightImage(Canvas c, Backdrop b, float alpha) {
         if (night < 0.999f || b.nightImage == null) drawImage(c, b.lightImage, alpha);
         if (night > 0.001f) drawImage(c, b.nightImage, alpha * night);
