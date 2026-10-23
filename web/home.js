@@ -51,6 +51,11 @@
   }
 
   var stage = $('stage'), body = document.body;
+  var wallpaperVideo = WallpaperVideo.create($('live-wallpaper'), Prefs.liveWallpaper, function (visible) {
+    setClass(body, 'live-wallpaper', visible);
+  });
+
+  function updateWallpaper() { wallpaperVideo.update(!document.hidden && !saverOn); }
 
   /** The 1920 × 1080 stage fills the window (on the TV it already is 1920 × 1080). */
   function fit() {
@@ -214,7 +219,6 @@
       renderLocalIp();
     });
   }
-
 
   function renderTop() {
     renderLocalIp();
@@ -486,6 +490,8 @@
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
       {label: tr('Mostrar IP da TV', 'Show TV IP address', 'Mostrar IP del TV'), toggle: Prefs.showIp(),
         step: function () { Prefs.set('show_ip', !Prefs.showIp()); refreshLocalIp(); }},
+      {label: tr('Fundo animado', 'Live wallpaper', 'Fondo animado'), toggle: Prefs.liveWallpaper(),
+        step: function () { Prefs.set('live_wallpaper', !Prefs.liveWallpaper()); updateWallpaper(); }},
       {label: tr('Widget de cotações', 'Quotes widget', 'Widget de cotizaciones'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
@@ -762,6 +768,7 @@
   function showSaver() {
     var photos = Data.showcase().filter(function (p) { return p.backdrop && Data.appFor(p.app); });
     saverOn = true;
+    updateWallpaper();
     updateMoreHint();
     var s = $('saver');
     s.innerHTML = '';
@@ -806,6 +813,7 @@
 
   function hideSaver() {
     saverOn = false;
+    updateWallpaper();
     updateMoreHint();
     clearTimeout(saverTimer);
     setClass($('saver'), 'on', false);
@@ -836,6 +844,7 @@
   // MARK: - Start
 
   function renderAll() {
+    updateWallpaper();
     renderTop();
     renderQuotes();
     cards = [];
@@ -889,7 +898,8 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { hideSaver(); return; }
+    if (document.hidden) { hideSaver(); updateWallpaper(); return; }
+    updateWallpaper();
     idleAt = Date.now();
     refreshLocalIp();
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });

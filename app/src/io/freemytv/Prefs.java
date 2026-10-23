@@ -113,6 +113,8 @@ final class Prefs {
     static boolean showIp() { return sp().getBoolean("show_ip", true); }
     static void setShowIp(boolean on) { put("show_ip", on); }
 
+    static boolean liveWallpaper() { return sp().getBoolean("live_wallpaper", true); }
+    static void setLiveWallpaper(boolean on) { put("live_wallpaper", on); }
 
     static boolean quotes() { return sp().getBoolean("quotes", Config.SHOW_CRYPTO); }
     static void setQuotes(boolean on) { put("quotes", on); }

@@ -14,6 +14,7 @@ final class German {
             case "Settings": return "Einstellungen";
             case "Home Settings": return "Start-Einstellungen";
             case "Show TV IP address": return "IP-Adresse des Fernsehers anzeigen";
+            case "Live wallpaper": return "Animierter Hintergrund";
             case "IP unavailable": return "IP nicht verfügbar";
             case "TV Settings": return "TV-Einstellungen";
             case "HDMI Inputs": return "HDMI-Eingänge";

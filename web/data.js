@@ -48,6 +48,7 @@ var Prefs = (function () {
     theme: function () { return pick('theme', 'auto'); },
     weather: function () { return pick('weather', true); },
     showIp: function () { return pick('show_ip', true); },
+    liveWallpaper: function () { return pick('live_wallpaper', true); },
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     shelf: function () { return pick('shelf', null); },

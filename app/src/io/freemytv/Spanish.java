@@ -14,6 +14,7 @@ final class Spanish {
             case "Settings": return "Ajustes";
             case "Home Settings": return "Ajustes de inicio";
             case "Show TV IP address": return "Mostrar IP del TV";
+            case "Live wallpaper": return "Fondo animado";
             case "IP unavailable": return "IP no disponible";
             case "TV Settings": return "Ajustes del TV";
             case "HDMI Inputs": return "Entradas HDMI";

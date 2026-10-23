@@ -628,11 +628,11 @@ public class SettingsActivity extends Activity {
         // MARK: - Home Settings and Remote Buttons
 
         private static final String[] LANGUAGES = {"auto", "pt", "en", "es", "de", "ru"}, UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
-        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, IP, then coins. */
-        private static final int CITY_ROW = 5, IP_ROW = 7, COIN_ROWS = 8;
+        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, IP, wallpaper, then coins. */
+        private static final int CITY_ROW = 5, IP_ROW = 7, WALLPAPER_ROW = 8, COIN_ROWS = 9;
 
         private float listRowHeight() {
-            return screen == HOME_SETTINGS ? 60 : LIST_ROW_H;
+            return screen == HOME_SETTINGS ? (dollar() ? 54 : 60) : LIST_ROW_H;
         }
 
         private boolean dollar() {
@@ -649,6 +649,7 @@ public class SettingsActivity extends Activity {
             l.add(Ui.tr("Cidade", "City"));
             l.add(Ui.tr("Widget de cotações", "Quotes widget"));
             l.add(Ui.tr("Mostrar IP da TV", "Show TV IP address"));
+            l.add(Ui.tr("Fundo animado", "Live wallpaper"));
             l.add("Bitcoin");
             l.add("Ethereum");
             l.add("Solana");
@@ -671,6 +672,7 @@ public class SettingsActivity extends Activity {
             v[CITY_ROW] = !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
             v[6] = onOff(Prefs.quotes());
             v[IP_ROW] = onOff(Prefs.showIp());
+            v[WALLPAPER_ROW] = onOff(Prefs.liveWallpaper());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
             for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
             return v;
@@ -748,6 +750,7 @@ public class SettingsActivity extends Activity {
                 case CITY_ROW: return;
                 case 6: Prefs.setQuotes(!Prefs.quotes()); break;
                 case IP_ROW: Prefs.setShowIp(!Prefs.showIp()); break;
+                case WALLPAPER_ROW: Prefs.setLiveWallpaper(!Prefs.liveWallpaper()); break;
                 default:
                     if (!Prefs.quotes()) return;
                     Prefs.setCoin(focus - COIN_ROWS, !Prefs.coin(focus - COIN_ROWS));
