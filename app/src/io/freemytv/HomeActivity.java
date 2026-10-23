@@ -39,7 +39,7 @@ public class HomeActivity extends Activity {
         home = new HomeView(this);
         if (Prefs.liveWallpaper()) {
             FrameLayout root = new FrameLayout(this);
-            liveWallpaper = new LiveWallpaper(this, home::setLiveWallpaperReady);
+            liveWallpaper = new LiveWallpaper(this, home::setLiveWallpaperState);
             root.addView(liveWallpaper, new FrameLayout.LayoutParams(-1, -1));
             root.addView(home, new FrameLayout.LayoutParams(-1, -1));
             setContentView(root);

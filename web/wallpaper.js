@@ -9,19 +9,20 @@ var WallpaperVideo = {
       active = false;
       generation++;
       video.style.visibility = 'hidden';
-      if (changed) changed(false);
+      if (changed) changed(false, !failed && enabled());
       try { video.pause(); video.removeAttribute('src'); video.load(); } catch (e) {}
     }
     function fail() { failed = true; stop(); }
     video.addEventListener('playing', function () {
-      if (active) { video.style.visibility = 'visible'; if (changed) changed(true); }
+      if (active) { video.style.visibility = 'visible'; if (changed) changed(true, false); }
     });
     video.addEventListener('error', function () { if (active) fail(); });
     return {update: function (visible) {
-      if (!enabled()) { failed = false; stop(); return; }
+      if (!enabled()) { failed = false; stop(); if (changed) changed(false, false); return; }
       if (!visible) { stop(); return; }
       if (active || failed) return;
       active = true;
+      if (changed) changed(false, true);
       var current = ++generation;
       try {
         video.muted = true;
