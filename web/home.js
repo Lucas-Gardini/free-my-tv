@@ -51,8 +51,9 @@
   }
 
   var stage = $('stage'), body = document.body;
-  var wallpaperVideo = WallpaperVideo.create($('live-wallpaper'), Prefs.liveWallpaper, function (visible) {
-    setClass(body, 'live-wallpaper', visible);
+  var wallpaperVideo = WallpaperVideo.create($('live-wallpaper'), Prefs.liveWallpaper, function (visible, pending) {
+    setClass(body, 'live-wallpaper', visible || pending);
+    setClass(body, 'wallpaper-pending', pending);
   });
 
   function updateWallpaper() { wallpaperVideo.update(!document.hidden && !saverOn); }
@@ -963,6 +964,7 @@
   });
 
   I18N.set(Prefs.language());
+  updateWallpaper();
   fit();
   renderTop();
   refreshLocalIp();

@@ -33,4 +33,10 @@
 - Independent review covered native top-button indices/navigation/accessibility, compact settings geometry, All Apps holds, web catalogue loading, personalization and currency fallback. No actionable findings.
 - Signed in-place installation on the owner's TCL Android 12 TV succeeded. Home screenshot preserves IP, red accents, date/weather and shelf; Settings screenshot confirms the seven-row menu including Top Buttons fits.
 - Hardware AVC decoder plays the muted 1920x1080 loop, releases in Settings and resumes on Home. No AndroidRuntime errors in the updated app process. Launcher, screensaver, remote accessibility service and disabled packages match the pre-update snapshot.
-- HomeMode, HomeActivity and LiveWallpaper are unchanged from fork main. Original/Free switching and new preference edits were not triggered remotely; physical long-press, button configuration and Samsung/LG hardware behavior remain manual checks.
+- At the upstream integration checkpoint, HomeMode, HomeActivity and LiveWallpaper were unchanged from fork main. Original/Free switching and new preference edits were not triggered remotely; physical long-press, button configuration and Samsung/LG hardware behavior remain manual checks.
+
+## Follow-up: startup wallpaper flash
+
+The owner reported the GTA wallpaper briefly appearing before the video. HomeView used the same static path for video loading and decoder failure; the web player likewise had no pending notification. Separate WAITING/PLAYING/FALLBACK on Android and pending/visible callbacks on web. While waiting, paint a neutral dark background with the video palette; restore GTA only for off/failure. The HTML initially suppresses its static background before scripts load, and the Android starting-window color matches the dark frame.
+
+Native and web loading regressions failed before the fix. Final suites cover 201 checks (43 recovery, 11 native IP, 13 native video, 14 web IP, 16 web video, 104 packaged translations). A focused independent review found no actionable issues in the state transitions, fallback, initialization or shader selection.
