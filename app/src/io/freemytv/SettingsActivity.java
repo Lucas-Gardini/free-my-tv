@@ -253,8 +253,8 @@ public class SettingsActivity extends Activity {
                 top = LIST_TOP + 20 + row * (CHOICE_H + ROW_GAP);
                 height = CHOICE_H;
             } else {
-                top = LIST_TOP + 20 + row * (LIST_ROW_H + LIST_ROW_GAP);
-                height = LIST_ROW_H;
+                top = LIST_TOP + 20 + row * (listRowHeight() + LIST_ROW_GAP);
+                height = listRowHeight();
             }
             focusBox.set(LIST_X * k, top * k, LIST_R * k, (top + height) * k);
             return focusBox;
@@ -628,8 +628,12 @@ public class SettingsActivity extends Activity {
         // MARK: - Home Settings and Remote Buttons
 
         private static final String[] LANGUAGES = {"auto", "pt", "en", "es", "de", "ru"}, UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
-        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, then one row per coin. */
-        private static final int CITY_ROW = 5, COIN_ROWS = 7;
+        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, IP, then coins. */
+        private static final int CITY_ROW = 5, IP_ROW = 7, COIN_ROWS = 8;
+
+        private float listRowHeight() {
+            return screen == HOME_SETTINGS ? 60 : LIST_ROW_H;
+        }
 
         private boolean dollar() {
             return "BRL".equalsIgnoreCase(Config.CURRENCY.trim());
@@ -644,6 +648,7 @@ public class SettingsActivity extends Activity {
             l.add(Ui.tr("Widget do clima", "Weather widget"));
             l.add(Ui.tr("Cidade", "City"));
             l.add(Ui.tr("Widget de cotações", "Quotes widget"));
+            l.add(Ui.tr("Mostrar IP da TV", "Show TV IP address"));
             l.add("Bitcoin");
             l.add("Ethereum");
             l.add("Solana");
@@ -665,6 +670,7 @@ public class SettingsActivity extends Activity {
             v[4] = onOff(Prefs.weather());
             v[CITY_ROW] = !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
             v[6] = onOff(Prefs.quotes());
+            v[IP_ROW] = onOff(Prefs.showIp());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
             for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
             return v;
@@ -741,6 +747,7 @@ public class SettingsActivity extends Activity {
                 case 4: Prefs.setWeather(!Prefs.weather()); break;
                 case CITY_ROW: return;
                 case 6: Prefs.setQuotes(!Prefs.quotes()); break;
+                case IP_ROW: Prefs.setShowIp(!Prefs.showIp()); break;
                 default:
                     if (!Prefs.quotes()) return;
                     Prefs.setCoin(focus - COIN_ROWS, !Prefs.coin(focus - COIN_ROWS));
@@ -931,14 +938,15 @@ public class SettingsActivity extends Activity {
 
         private void drawList(Canvas c) {
             boolean keys = screen == REMOTE_KEYS;
+            float rowHeight = listRowHeight();
             String[] labels = keys ? keyLabels() : settingLabels();
             String[] values = keys ? keyValues() : settingValues();
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(keys ? Ui.tr("Botões do Controle", "Remote Buttons") : Ui.tr("Ajustes do Início", "Home Settings"),
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             for (int i = 0; i < labels.length; i++) {
-                float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
-                rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
+                float y = (LIST_TOP + 20 + i * (rowHeight + LIST_ROW_GAP)) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + rowHeight * k);
                 float f = drawRowBackground(c, i);
                 rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
                 boolean locked = !keys && i >= COIN_ROWS && !Prefs.quotes();
@@ -949,7 +957,7 @@ public class SettingsActivity extends Activity {
                 c.drawText(values[i], rowRect.right - 30 * k, base, rowValue);
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
-            float hy = (LIST_TOP + 20 + labels.length * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
+            float hy = (LIST_TOP + 20 + labels.length * (rowHeight + LIST_ROW_GAP) + 36) * k;
             c.drawText(Ui.tr("OK ou as setas mudam o valor.", "OK or the arrows change the value."), LIST_X * k + 30 * k, hy, hint);
             if (keys) {
                 c.drawText(RemoteKeys.VESTEL ? Ui.tr("YouTube, Prime Video e Google Play: a própria TV controla esses botões.",

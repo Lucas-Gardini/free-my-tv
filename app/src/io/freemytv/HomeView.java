@@ -146,7 +146,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Paint clockFrost;
-    private Paint homeBrand, homeSignature, shelfLabel;
+    private Paint homeBrand, homeSignature, homeIp, shelfLabel;
+    private final boolean showIp = Prefs.showIp();
+    private String ipText = "";
+    private boolean ipLoading;
+    private float signatureIpX;
     private String[] shelfLabels = new String[0];
     private Bitmap wallpaper;
     private Shader wallpaperShade;
@@ -353,6 +357,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             updatePalette();
             checkNight(true);
             updatePicks();      // three new ones every hour
+            updateLocalIp();
             handler.postDelayed(this, 15_000);
         }
     };
@@ -472,6 +477,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         idle = false;
         Choreographer.getInstance().postFrameCallback(this);
         spoken.readAgain();
+        updateLocalIp();
+    }
+
+    private void updateLocalIp() {
+        if (!showIp || ipLoading) return;
+        ipLoading = true;
+        final Context context = getContext().getApplicationContext();
+        LOADER.execute(() -> {
+            String address = LocalIp.read(context);
+            final String label = " · " + (address.isEmpty() ? Ui.tr("IP indisponível", "IP unavailable") : address);
+            handler.post(() -> {
+                ipLoading = false;
+                if (!running || !showIp) return;
+                ipText = label;
+                heroLayer.invalidate();
+            });
+        });
     }
 
     void pause() {
@@ -648,6 +670,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lightGradient = null;
         homeBrand = Ui.text(Ui.semibold, 32 * k, 0xF2F5F9FF);
         homeSignature = Ui.text(Ui.regular, 19 * k, 0xA6BCD0E9);
+        homeIp = Ui.text(Ui.regular, 19 * k, 0xA6BCD0E9);
+        signatureIpX = (MARGIN + 24 + 8) * k + homeSignature.measureText("by KowalskiJr");
         shelfLabel = Ui.text(Ui.medium, 22 * k, WHITE);
         shelfLabel.setTextAlign(Paint.Align.CENTER);
         wallpaperShade = new LinearGradient(0, 0, 0, h,
@@ -2716,12 +2740,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawRoundRect(78 * k, 82 * k, 82 * k, 142 * k, 2 * k, 2 * k, fill);
             c.drawText("Free My TV", (MARGIN + 24) * k, 110 * k, homeBrand);
             c.drawText("by KowalskiJr", (MARGIN + 24) * k, 143 * k, homeSignature);
+            if (showIp) c.drawText(ipText, signatureIpX, 143 * k, homeIp);
             drawClock(c);
             if (HomeData.coinCount() > 0) drawQuotes(c);
             return;
         }
         String hello = Ui.tr("Para você", "For You");
         c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
+        if (showIp) c.drawText(ipText, MARGIN * k + lTitle.measureText(hello) + 16 * k, L_TITLE_BASE * k, homeIp);
         // Text tabs (the selected one in bold, in the main text color); with focus on the tabs, the selected one gets
         // the white pill with a shadow and grows a little (the tvOS focus).
         float focus = Ui.clamp(topFocus[tab].value);
