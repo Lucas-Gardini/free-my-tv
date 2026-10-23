@@ -78,6 +78,7 @@
     ['peacock', /peacock/, /peacock/i, ['#1C1C1E', '#000000']],
     ['nfl', /nfl/, /^nfl/i, ['#013369', '#00163D']],
     ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
+    ['jellyfin', /jellyfin/i, /jellyfin/i, ['#AA5CC3', '#00A4DC']],
     ['spotify', /spotify/, /spotify/i, ['#1DB954', '#0F7A36']]
   ];
   var MAX_SHELF = 8;
@@ -857,9 +858,17 @@
     updateFocus();
   }
 
+  /** hide_apps in config.properties: left out of the shelf, All Apps and the picks, by id or name (part of it). */
+  var HIDE = (CONFIG.hideApps || []).map(function (s) { return s.toLowerCase(); });
+  function hidden(app) {
+    var id = (app.id || '').toLowerCase(), title = (app.title || '').toLowerCase();
+    for (var i = 0; i < HIDE.length; i++) if (id.indexOf(HIDE[i]) >= 0 || title.indexOf(HIDE[i]) >= 0) return true;
+    return false;
+  }
+
   function loadApps(done) {
     TV.apps(function (list) {
-      apps = list;
+      apps = list.filter(function (a) { return !hidden(a); });
       Data.setApps(apps);
       pickShelf();
       TV.inputs(function (list2) {
