@@ -183,6 +183,128 @@ public class HomeModeTest {
             HomeMode.applyNow(c, HomeMode.ORIGINAL);
             check(Adb.accessibility.equals("0"), "must complete interrupted accessibility restore");
         });
+        test("Google setup goes off before stock home", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            int setup = Adb.commands.indexOf("pm disable-user --user 0 " + HomeMode.GOOGLE_SETUP);
+            int home = Adb.commands.indexOf("pm disable-user --user 0 " + Adb.HOME.split("/")[0]);
+            check(setup >= 0 && home > setup, "must disable setup before stock home");
+        });
+        test("failed setup disable keeps stock home enabled", c -> {
+            Adb.setupHome = Adb.rejectSetupDisable = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(!Adb.disabled.contains(Adb.HOME.split("/")[0]), "must retain stock home when setup stays on");
+        });
+        test("Original restores home before enabling setup", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.commands.clear();
+            HomeMode.applyNow(c, HomeMode.ORIGINAL);
+            int home = Adb.commands.indexOf("cmd package set-home-activity '" + Adb.HOME + "'");
+            int setup = Adb.commands.indexOf("pm enable " + HomeMode.GOOGLE_SETUP);
+            check(home >= 0 && setup > home, "must restore the home role before enabling setup");
+        });
+        test("failed home restore leaves setup off", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.rejectHomeRestore = true;
+            HomeMode.applyNow(c, HomeMode.ORIGINAL);
+            check(Adb.disabled.contains(HomeMode.GOOGLE_SETUP), "setup must wait until a home is restored");
+            check(Adb.global.getOrDefault("free_my_tv_disabled", "").contains(HomeMode.GOOGLE_SETUP),
+                    "must retain recovery intent for setup");
+        });
+        test("watchdog restores home before enabling setup", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.commands.clear();
+            HomeMode.revertHomeNow(c);
+            check(Adb.commands.indexOf("cmd package set-home-activity '" + Adb.HOME + "'")
+                    < Adb.commands.indexOf("pm enable " + HomeMode.GOOGLE_SETUP), "watchdog setup order");
+        });
+        test("boot verification disables setup before stock home", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.disabled.clear(); Adb.commands.clear();
+            HomeMode.verifyNow(c);
+            int setup = Adb.commands.indexOf("pm disable-user --user 0 " + HomeMode.GOOGLE_SETUP);
+            int home = Adb.commands.indexOf("pm disable-user --user 0 " + Adb.HOME.split("/")[0]);
+            check(setup >= 0 && home > setup, "boot repair must retain setup-first order");
+        });
+        test("input and remote package dependencies stay enabled", c -> {
+            Adb.needed.add("com.tcl.miracast");
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(!Adb.disabled.contains("com.tcl.miracast"), "input dependency must stay enabled");
+            check(!Adb.disabled.isEmpty(), "unrelated targets should still be disabled");
+        });
+        test("incomplete dependency inspection disables no packages", c -> {
+            Adb.unknownPackageNeeds = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(Adb.disabled.isEmpty(), "must fail closed for package inspection");
+        });
+        test("boot repair restores a newly discovered input dependency", c -> {
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.needed.add("com.tcl.miracast");
+            HomeMode.verifyNow(c);
+            check(!Adb.disabled.contains("com.tcl.miracast"), "must restore required input package");
+            check(!Adb.global.getOrDefault("free_my_tv_disabled", "").contains("com.tcl.miracast"),
+                    "must remove restored package from journal");
+        });
+        test("Kalley model guard changes nothing", c -> {
+            android.os.Build.DEVICE = "R3_GTV";
+            HomeMode.applyNow(c, HomeMode.FREE); unchanged();
+        });
+        test("verification retries packages present only in the durable journal", c -> {
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.extraPackages.add("com.example.oldpromo");
+            Adb.global.put("free_my_tv_disabled", "com.example.oldpromo");
+            HomeMode.verifyNow(c);
+            check(Adb.disabled.contains("com.example.oldpromo"), "must retry journal entries absent from local state");
+        });
+        test("failed dumpsys cannot pass the package inspection sentinel", c -> {
+            Adb.realPackageInspection = true; Adb.packageDumpExit = 1;
+            Adb.packageDump = "Permission Denial: package inspection";
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(Adb.inspectionOutput.contains("checked"), "must execute actual inspection shell: " + Adb.inspectionOutput);
+            check(Adb.disabled.isEmpty(), "failed package dump must never authorize a disable");
+        });
+        test("empty dumpsys cannot authorize package disables", c -> {
+            Adb.realPackageInspection = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(Adb.inspectionOutput.contains("checked"), "must execute actual inspection shell: " + Adb.inspectionOutput);
+            check(Adb.disabled.isEmpty(), "empty package dump must be unknown");
+        });
+        test("reapplying Free preserves disabled setup HOME capability", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(HomeMode.state(c).optBoolean("setupHome"), "disabled setup is still a HOME candidate");
+            Adb.disabled.clear(); Adb.commands.clear();
+            HomeMode.verifyNow(c);
+            int setup = Adb.commands.indexOf("pm disable-user --user 0 " + HomeMode.GOOGLE_SETUP);
+            int home = Adb.commands.indexOf("pm disable-user --user 0 " + Adb.HOME.split("/")[0]);
+            check(setup >= 0 && home > setup, "repeat switch must retain OTA repair order");
+        });
+        test("reenabled user-disabled setup keeps stock home safe", c -> {
+            Adb.setupHome = true; Adb.disabled.add(HomeMode.GOOGLE_SETUP);
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.disabled.clear(); Adb.commands.clear(); // Firmware reenabled setup and stock home.
+            HomeMode.applyNow(c, HomeMode.FREE);
+            check(!Adb.disabled.contains(Adb.HOME.split("/")[0]), "user-owned setup still on requires stock home");
+        });
+        test("empty home role is not proof that stock home recovered", c -> {
+            Adb.setupHome = true;
+            HomeMode.applyNow(c, HomeMode.FREE);
+            Adb.rejectHomeRestore = Adb.emptyHomeRole = true;
+            HomeMode.applyNow(c, HomeMode.ORIGINAL);
+            check(Adb.disabled.contains(HomeMode.GOOGLE_SETUP), "must not enable setup with only a chooser");
+        });
+        test("Kalley guard also protects existing Free installations", c -> {
+            HomeMode.applyNow(c, HomeMode.FREE);
+            android.os.Build.DEVICE = "R3_GTV";
+            Adb.disabled.clear(); Adb.commands.clear();
+            HomeMode.verifyNow(c);
+            check(Adb.disabled.isEmpty(), "boot repair must respect restricted model");
+        });
         System.out.println(passed + " passed, " + failed + " failed");
         if (failed != 0) System.exit(1);
     }

@@ -29,7 +29,7 @@ Open source. Built with Claude Code. One button to undo.
 
 ## Install
 
-About ten minutes. You need a Google TV or Android TV (Android 9 or newer) and a computer on the same Wi-Fi.
+About ten minutes. You need a Google TV or Android TV (Android 8 or newer) and a computer on the same Wi-Fi.
 
 ### The easy way: an AI assistant
 
@@ -38,7 +38,7 @@ About ten minutes. You need a Google TV or Android TV (Android 9 or newer) and a
    > Install Free My TV (github.com/simbasjungles/free-my-tv) on my TV at 192.168.1.50. I live in Lisbon.
 
    It downloads the code, installs the tools it needs, builds the app and puts it on your TV, and asks before anything important. Swap in your TV's IP and your city.
-3. **On the TV**, open *Free My TV* → *Home Screen* → *Free My TV*, and accept the debugging prompt (tick *Always allow*).
+3. **On the TV**, open *Free My TV* → *Home Screen* → *Free My TV*. That's when the TV asks *Allow USB debugging?* for Free My TV: tick *Always allow* and accept.
 
 ### The manual way
 
@@ -63,7 +63,7 @@ About ten minutes. You need a Google TV or Android TV (Android 9 or newer) and a
    ```bash
    adb shell "appops set io.freemytv AUTO_START allow || appops set io.freemytv APP_AUTO_START allow"
    ```
-5. **On the TV**, open *Free My TV* → *Home Screen* → *Free My TV*.
+5. **On the TV**, open *Free My TV* → *Home Screen* → *Free My TV*. The TV asks *Allow USB debugging?* once more, now for Free My TV itself: tick *Always allow* and accept.
 
 ## LG TVs (webOS)
 
@@ -112,11 +112,13 @@ The first values come from `config.properties`, created by the first build (Goog
 | `latitude`, `longitude` | Your city, for the weather and the sunset | New York |
 | `city` | The name on the weather card | `Weather` |
 | `hide_animation` | Leave cartoons and anime out of the picks | `false` |
-| `language` | `auto` (follows the TV), `en`, `es`, `pt`, `ru` or `de` | `auto` |
+| `language` | `auto` (follows the TV), or a language with a [translation](#translations) (`en`, `pt`, `es`, `de`, `ru`, `fr`, `ja`…) on Google TV; `en`, `es`, `pt`, `ru` or `de` on LG and Samsung | `auto` |
 | `show_crypto` | Show Binance crypto prices on home and screensaver | `true` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
 | `disable_assistant` | Also turn off Google Assistant | `false` |
+| `hide_services` | Streaming services to leave out of the picks even when their app is on the TV (`netflix`, `prime`, `disney`…), comma separated; for apps the TV ships that you don't subscribe to. Google TV only | empty |
+| `hide_apps` | Apps to leave out of the shelf, All Apps and the picks, by id or name (part of it), comma separated; for apps the TV ships that can't be uninstalled, like Samsung's built-in Netflix. LG and Samsung only | empty |
 
 Changed something? Run `./build.sh` and install again. Keep `freemytv.keystore`: updates are signed with it.
 
@@ -145,8 +147,9 @@ To remove it for good, switch to *Original* first, then uninstall *Free My TV* (
   - on Multilaser TVs, Anoki's screen-content recognition (ACR), the store demo and the manual;
   - on KTC-made TVs (NextStar), Anoki's screen-content recognition (ACR), the store demo and the manual;
   - Google Assistant, only with `disable_assistant=true`.
-- On TCL TVs, the remote's Netflix, YouTube and Prime buttons keep working through a small accessibility service that only reads those buttons. Pick what each one opens in *Free My TV* → *Remote Buttons*; *Original* turns the service off. On Vestel-made TVs (F&U and other store brands) and Xiaomi (Formovie) projectors the same goes for the Netflix button, and on KTC-made TVs (NextStar) for the Tabii button. On Sony TVs, the BRAVIA CORE, Netflix, Disney+, Prime Video, YouTube and Crunchyroll buttons can each open the app you pick, or keep Sony's default.
-- Picture, sound, inputs, remote pairing, Google services and the Play Store are on a protected list, checked before every change.
+- On TCL TVs, the remote's Netflix, YouTube and Prime buttons keep working through a small accessibility service that only reads those buttons. Pick what each one opens in *Free My TV* → *Remote Buttons*; *Original* turns the service off. On Vestel-made TVs (F&U and other store brands) and Xiaomi (Formovie) projectors the same goes for the Netflix button, and on KTC-made TVs (NextStar) for the Tabii button. On Sony TVs, the BRAVIA CORE, Netflix, Disney+, Prime Video, YouTube and Crunchyroll buttons (and Google Play, on remotes that have it) can each open the app you pick, or keep Sony's default.
+- Picture, sound, inputs, remote pairing, Google services and the Play Store are on a protected list, checked before every change, and so are Android's own pieces and factory menus. Before anything goes off, the TV is asked whether its inputs or its remote's Input key depend on it; those stay on.
+- On Google TV, the setup app goes off before the stock home screen and comes back after it, so its recovery screen never takes over the Home button in between.
 - Apps that saved a Wi-Fi network are never turned off, since Android would erase the network. If the TV's first setup saved yours, the switch asks you to forget the network and connect again in Settings first (saved networks out of range don't show there; Claude Code can remove them).
 
 ## Any TV
@@ -170,14 +173,14 @@ It's your code, and Claude Code finds its way around it. Try:
 
 - *"Add Crunchyroll to the shelf."*
 - *"Show the prices in euros."*
-- *"Add Spanish."*
+- *"Add Catalan."*
 - *"Switch to the night look an hour after sunset."*
 
 ## How it works
 
 - **A plain Android app, no Gradle, no libraries.** [`build.sh`](build.sh) runs aapt2 → javac → d8 → zipalign → apksigner and makes a 2 MB APK.
 - **It uses the TV's own ADB, from inside the TV.** The app connects to `127.0.0.1:5555` with its own key (that's the *Allow USB debugging?* prompt) and runs the same commands you would: `cmd package set-home-activity`, `settings put secure screensaver_components`, `pm disable-user`. Nothing listens to the network.
-- **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 9 to 12, with lighter shadows and no GPU layers on 9 to 11 for their older GPUs).
+- **Drawn by hand on one Canvas**, with Android 13 shaders for the frosted glass and the sky (plain fills on Android 8 to 12, with lighter shadows and no GPU layers on 8 to 11 for their older GPUs).
 - **A safety net.** A watchdog in a separate process brings back the stock home screen after three Java crashes in five minutes, and a boot check keeps your choice after TV updates. Both recovery and switching require the TV's ADB to remain enabled and authorized; the watchdog does not detect every freeze or native crash.
 - **Recovery before changes.** Switching stops if the saved Wi-Fi networks cannot be checked or recovery data cannot be saved. Original components, user-disabled packages and a journal of packages to disable are also stored in the TV's settings, so Original can repair a partial switch after the app's data is lost. Original can always be selected again. Older installs acquire the metadata backup on their next successful boot/update check or switch; metadata already lost before that backup cannot be reconstructed exactly.
 - **On LG and Samsung, the same design in plain HTML, CSS and JavaScript** ([`web/`](web)), written for the Chromium of older TVs, with no frameworks. [`webos/build.py`](webos/build.py) packs it with `config.properties` into an `.ipk` without LG's tools, and [`webos/install.py`](webos/install.py) installs it through Developer Mode; on LG it lists and opens apps through the TV's own service bus (Luna), as LG's launcher does. [`tizen/build.py`](tizen/build.py) packs the same app into a Samsung `.wgt`, which uses Tizen's web APIs for the apps and the inputs. To preview it on a computer: `python3 webos/build.py --preview`, then open `out/webos/index.html` (a stand-in lists sample apps).
@@ -205,7 +208,30 @@ The website ([freemytv.io](https://freemytv.io)) is in [`docs/`](docs): plain HT
 
 ### Android regression tests
 
-Run `bash tests/home-mode.sh` with JDK 17+, curl and sha256sum available (`JAVA_HOME` may select the JDK). The tests run the real `HomeMode` against a simulated ADB transport and temporary files, covering incomplete Wi-Fi diagnostics, failed recovery writes, interrupted switches, lost local state and Original recovery. They do not connect to a TV. A checksum-verified JSON library is downloaded into ignored `out/tests/` for the host tests only; the Android app still has no library dependencies. Run `bash build.sh` separately with the Android SDK to validate the APK.
+Run `bash tools/check.sh` before pushing: it builds Android, runs the recovery, local-IP and wallpaper regressions, checks the translation catalogues, packages LG/Samsung and checks ES5 compatibility. Run `bash tests/home-mode.sh` for recovery alone, with JDK 17+, Bash, curl and sha256sum available (`JAVA_HOME` may select the JDK). It runs the real `HomeMode` against a simulated ADB transport and temporary files, including actual package-inspection shell commands with simulated diagnostics. Cases cover incomplete diagnostics, failed recovery writes, interrupted switches, lost local state, setup/home ordering and Original recovery. These tests do not connect to a TV. A checksum-verified JSON library is downloaded into ignored `out/tests/` for the host tests only; the Android app still has no library dependencies.
+
+## Translations
+
+On Google TV, each language is one file, [`app/assets/i18n/<lang>.json`](app/assets/i18n), keyed by the English text
+in the code. *Automatic* follows the TV's language and uses any language that has a file (English otherwise); *Home
+Settings* → *Language* lists them all. Today: English, Portuguese, Spanish, German, French, Italian, Dutch, Polish,
+Swedish, Danish, Norwegian, Finnish, Czech, Romanian, Turkish, Russian, Ukrainian, Greek, Japanese, Korean, Simplified
+Chinese, Hindi, Indonesian, Vietnamese and Thai. Portuguese, Spanish, German, Russian and Thai were translated by hand and are the
+reference (fix them by hand); the others were machine-made, and corrections from native speakers are welcome.
+
+- **Add a language:** `python3 tools/translate.py --new ca`, then fill `app/assets/i18n/ca.json` by hand, or with
+  `ANTHROPIC_API_KEY` set, `python3 tools/translate.py --fill --lang ca` (only the strings go to the API).
+- **After changing text in the code:** `python3 tools/translate.py` lists what each language lacks; `--fill` translates
+  only that, `--prune` drops strings the code no longer uses.
+  Run `python3 tools/translate.py --check` to validate all catalogues without writing files.
+- Text built at runtime has placeholders (`"{n} min ago"`), so each language puts the words in its own order. A key
+  like `"unit|Automatic"` is the same English in another place, where a language may need another word.
+- Counts have plural forms: `"plural|one:{n} season|other:{n} seasons"` is translated with one form per plural
+  category the language uses (Russian `"one:{n} сезон|few:{n} сезона|many:{n} сезонов|other:{n} сезона"`, Japanese
+  just `"other:{n}シーズン"`), and Android's plural rules pick the one for each number.
+- **Limits:** right-to-left languages (Arabic, Hebrew, Persian) would need the layout mirrored, so they aren't there
+  yet. Chinese, Japanese, Korean and Hindi are drawn with the TV's system font (Inter has no such letters). The LG and
+  Samsung app has English, Portuguese, Spanish, German and Russian.
 
 ## Privacy
 
