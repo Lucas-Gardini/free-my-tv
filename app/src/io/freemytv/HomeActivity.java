@@ -8,6 +8,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.widget.TextView;
+import android.widget.FrameLayout;
 
 /**
  * The Free My TV home screen (Android's "Home" role in Free My TV mode). It runs in the :home process: if it crashes,
@@ -16,6 +17,7 @@ import android.widget.TextView;
  */
 public class HomeActivity extends Activity {
     private HomeView home;
+    private LiveWallpaper liveWallpaper;
     private int prefsVersion = Prefs.version;   // settings changed while we were away: start over
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -36,7 +38,13 @@ public class HomeActivity extends Activity {
         }
         Ui.init(this);
         home = new HomeView(this);
-        setContentView(home);
+        if (Prefs.liveWallpaper()) {
+            FrameLayout root = new FrameLayout(this);
+            liveWallpaper = new LiveWallpaper(this, home::setLiveWallpaperReady);
+            root.addView(liveWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            root.addView(home, new FrameLayout.LayoutParams(-1, -1));
+            setContentView(root);
+        } else setContentView(home);
         getWindow().setBackgroundDrawable(null);
     }
 
@@ -49,9 +57,11 @@ public class HomeActivity extends Activity {
             return;
         }
         if (home != null) home.resume();
+        if (liveWallpaper != null) liveWallpaper.startWallpaper();
     }
 
     @Override protected void onPause() {
+        if (liveWallpaper != null) liveWallpaper.stopWallpaper();
         if (home != null) home.pause();
         super.onPause();
     }
@@ -63,6 +73,7 @@ public class HomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (liveWallpaper != null) liveWallpaper.stopWallpaper();
         if (home != null) home.destroy();
         super.onDestroy();
     }

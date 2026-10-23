@@ -53,6 +53,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Wallpaper: one local image with quiet navy shading for readable text. */
 #sky { background: #081221 url('backgrounds/Vice_City_01.jpg') center center no-repeat; background-size: cover; }
+#live-wallpaper { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; object-fit: cover; visibility: hidden; pointer-events: none; }
 #sky .veil {
   position: absolute; left: 0; top: 0; width: 100%; height: 100%;
   background: -webkit-linear-gradient(top, rgba(5,12,26,0.20), rgba(6,15,31,0.02) 48%, rgba(4,11,24,0.64));
@@ -303,7 +304,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tile.focus .app-name { color: #FFF; }
 #identity { position: absolute; left: 98px; top: 52px; font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: 0.015em; color: #F5EAF5; }
 #identity::before { content: ''; position: absolute; left: -18px; top: 2px; width: 3px; height: 52px; border-radius: 2px; background: #FF4CB8; box-shadow: 0 0 14px rgba(255,53,161,0.62); }
+.live-wallpaper #identity::before { background: #FF263F; box-shadow: 0 0 14px rgba(255,38,63,0.62); }
 #identity span { display: block; font-size: 17px; line-height: 24px; font-weight: 400; letter-spacing: 0.02em; color: rgba(226,200,225,0.72); }
+#identity #local-ip { display: inline; margin-left: 8px; font-size: 17px; letter-spacing: 0.02em; }
 
 /* MARK: - Drawer: inputs and shortcuts, weather, prices */
 
@@ -554,3 +557,27 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   -webkit-transition: opacity 0.2s; transition: opacity 0.2s;
 }
 #more-hint.show { opacity: 1; }
+
+/* The red video uses neutral typography and red focus accents. */
+.live-wallpaper #identity { color: #F2F5F9; }
+.live-wallpaper #identity span { color: rgba(188,208,233,0.65); }
+.live-wallpaper .tile .app-name { color: #EFF2F7; }
+.live-wallpaper .tile::after { background: #FF263F; }
+.live-wallpaper .tab.focus, .live-wallpaper .round.focus, .live-wallpaper .key.focus {
+  background: #2A090F; color: #FFF;
+  box-shadow: inset 0 0 0 2px #FF263F, 0 0 0 2px rgba(255,38,63,0.24);
+}
+.live-wallpaper .round { background: rgba(18,12,16,0.3); color: #EFF2F7; box-shadow: inset 0 0 0 1px rgba(230,234,241,0.35), 0 6px 22px rgba(0,0,0,0.12); }
+.live-wallpaper .round.focus { background: #2A090F; box-shadow: inset 0 0 0 2px #FF263F, 0 0 0 2px rgba(255,38,63,0.24); }
+.live-wallpaper .card .img::after, .live-wallpaper .box .row.focus { box-shadow: inset 0 0 0 2px #FF263F; }
+.live-wallpaper .cell.focus .face { box-shadow: 0 0 0 3px #FF263F, 0 0 0 5px rgba(255,38,63,0.4), 0 16px 34px rgba(0,0,0,0.55); }
+.live-wallpaper #clock .weather { color: #F2F4F7; background: rgba(28,7,12,0.92); box-shadow: inset 0 0 0 1px rgba(255,38,63,0.44), 0 8px 24px rgba(0,0,0,0.16); }
+.live-wallpaper #clock .weather .range { color: #E3E7ED; border-left-color: rgba(255,38,63,0.44); }
+.live-wallpaper.no-picks #clock .time {
+  color: #F2F4F7;
+  background: -webkit-linear-gradient(top, #F8F9FC 0%, #E3E6EC 28%, #AFB6C2 72%, #D6DBE3 100%);
+  background: linear-gradient(#F8F9FC 0%, #E3E6EC 28%, #AFB6C2 72%, #D6DBE3 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+.live-wallpaper #more-hint { border-color: rgba(229,233,239,0.72); }
+.live-wallpaper #prices .down { color: #FF5D5D; background: rgba(255,38,63,0.14); }

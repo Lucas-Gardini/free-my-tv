@@ -53,7 +53,7 @@ import java.io.InputStream;
  *    (logo + price) at the right end of the tab row;
  *  - three cards with the titles recommended for right now in the selected tab (Recs, from TMDB); the background is
  *    a local wallpaper; without picks, a centered clock, date and weather;
- *  - at the bottom, floating app artwork with labels and a pink focus underline;
+ *  - at the bottom, floating app artwork with labels and a focus underline;
  *  - ↓ on the shelf: everything moves up and the bottom drawer appears (inputs, shortcuts, weather for the next hours
  *    and quotes with the 24 h change); the background lightens (darkens at night). ↑ or Back closes it;
  *  - from sunset to sunrise, a night look: dark background, smoked glass and white text.
@@ -146,14 +146,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Paint clockFrost;
-    private Paint homeBrand, homeSignature, shelfLabel;
+    private Paint homeBrand, homeSignature, homeIp, shelfLabel;
+    private final boolean showIp = Prefs.showIp();
+    private String ipText = "";
+    private boolean ipLoading;
+    private float signatureIpX;
     private String[] shelfLabels = new String[0];
     private Bitmap wallpaper;
     private Shader wallpaperShade;
     private BitmapShader wallpaperGlass;
+    private BitmapShader staticWallpaperGlass, liveWallpaperGlass;
+    private boolean liveWallpaperReady;
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Matrix glassMatrix = new Matrix();
-    private Shader weatherGlass;
+    private Shader weatherGlass, liveWeatherGlass, clockGradient, liveClockGradient;
     private String weatherRange = "";
     private float weatherMainWidth, weatherRangeWidth;
     private Shader lightGradient;
@@ -353,6 +359,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             updatePalette();
             checkNight(true);
             updatePicks();      // three new ones every hour
+            updateLocalIp();
             handler.postDelayed(this, 15_000);
         }
     };
@@ -424,10 +431,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG));
                 source.recycle();
                 Bitmap softened = Bitmap.createScaledBitmap(image, 64, 36, true);
+                Bitmap liveGlass = null;
+                if (Prefs.liveWallpaper()) {
+                    try (InputStream poster = context.getAssets().open("backgrounds/Red_Eye_Glass.jpg")) {
+                        liveGlass = BitmapFactory.decodeStream(poster);
+                    } catch (IOException e) { AppLog.w("live wallpaper glass preview unavailable"); }
+                }
+                final Bitmap videoGlass = liveGlass;
                 handler.post(() -> {
                     wallpaper = image;
-                    wallpaperGlass = new BitmapShader(softened, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-                    sizeWallpaperGlass();
+                    staticWallpaperGlass = new BitmapShader(softened, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                    if (videoGlass != null) liveWallpaperGlass = new BitmapShader(videoGlass, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                    updateWallpaperGlass();
                     sky.invalidate();
                     heroLayer.invalidate();
                     tiles.invalidate();
@@ -444,6 +459,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wallpaperGlass.setLocalMatrix(glassMatrix);
         glassPaint.setShader(wallpaperGlass);
         if (clockFrost != null) clockFrost.setShader(wallpaperGlass);
+    }
+
+    void setLiveWallpaperReady(boolean ready) {
+        liveWallpaperReady = ready;
+        updateWallpaperGlass();
+        sky.invalidate();
+        heroLayer.invalidate();
+        tiles.invalidate();
+        platter.invalidate();
+    }
+
+    private void updateWallpaperGlass() {
+        wallpaperGlass = liveWallpaperReady && liveWallpaperGlass != null ? liveWallpaperGlass : staticWallpaperGlass;
+        sizeWallpaperGlass();
+        if (lClock != null) lClock.setShader(liveWallpaperReady ? liveClockGradient : clockGradient);
     }
 
     // MARK: - Lifecycle (called by HomeActivity)
@@ -472,6 +502,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         idle = false;
         Choreographer.getInstance().postFrameCallback(this);
         spoken.readAgain();
+        updateLocalIp();
+    }
+
+    private void updateLocalIp() {
+        if (!showIp || ipLoading) return;
+        ipLoading = true;
+        final Context context = getContext().getApplicationContext();
+        LOADER.execute(() -> {
+            String address = LocalIp.read(context);
+            final String label = " · " + (address.isEmpty() ? Ui.tr("IP indisponível", "IP unavailable") : address);
+            handler.post(() -> {
+                ipLoading = false;
+                if (!running || !showIp) return;
+                ipText = label;
+                heroLayer.invalidate();
+            });
+        });
     }
 
     void pause() {
@@ -640,14 +687,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clockFrost = new Paint(lClock);
         clockFrost.clearShadowLayer();
         clockFrost.setShader(wallpaperGlass);
-        lClock.setShader(new LinearGradient(0, (L_CLOCK_BASE - 140) * k, 0, (L_CLOCK_BASE + 4) * k,
+        clockGradient = new LinearGradient(0, (L_CLOCK_BASE - 140) * k, 0, (L_CLOCK_BASE + 4) * k,
                 new int[] {0xF8FFFFFF, 0xD9FFF9FD, 0x78DACDDF, 0xD9FFF7FD},
-                new float[] {0, 0.28f, 0.72f, 1}, Shader.TileMode.CLAMP));
+                new float[] {0, 0.28f, 0.72f, 1}, Shader.TileMode.CLAMP);
+        liveClockGradient = new LinearGradient(0, (L_CLOCK_BASE - 140) * k, 0, (L_CLOCK_BASE + 4) * k,
+                new int[] {0xFFF8F9FC, 0xFFE3E6EC, 0xFFAFB6C2, 0xFFD6DBE3},
+                new float[] {0, 0.28f, 0.72f, 1}, Shader.TileMode.CLAMP);
+        lClock.setShader(liveWallpaperReady ? liveClockGradient : clockGradient);
         lWeather = Ui.text(Ui.medium, 26 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
         lightGradient = null;
         homeBrand = Ui.text(Ui.semibold, 32 * k, 0xF2F5F9FF);
         homeSignature = Ui.text(Ui.regular, 19 * k, 0xA6BCD0E9);
+        homeIp = Ui.text(Ui.regular, 19 * k, 0xA6BCD0E9);
+        signatureIpX = (MARGIN + 24 + 8) * k + homeSignature.measureText("by KowalskiJr");
         shelfLabel = Ui.text(Ui.medium, 22 * k, WHITE);
         shelfLabel.setTextAlign(Paint.Align.CENTER);
         wallpaperShade = new LinearGradient(0, 0, 0, h,
@@ -655,6 +708,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 new float[] {0, 0.42f, 0.78f, 1}, Shader.TileMode.CLAMP);
         weatherGlass = new LinearGradient(0, (L_WEATHER_BASE - 48) * k, 0, (L_WEATHER_BASE + 24) * k,
                 0x744B344E, 0xB0242034, Shader.TileMode.CLAMP);
+        liveWeatherGlass = new LinearGradient(0, (L_WEATHER_BASE - 48) * k, 0, (L_WEATHER_BASE + 24) * k,
+                0xE628080D, 0xED12070B, Shader.TileMode.CLAMP);
         weatherLineAt = -1;
         buttonPaint = Ui.text(Ui.semibold, 29 * k, INK);
         capsuleText = Ui.numbers(Ui.medium, 29 * k, 0xF2FFFFFF);
@@ -1218,7 +1273,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawPlatter(Canvas c) {
         if (drawerItems.isEmpty()) return;
         float x = w / 2f, y = h - 52 * k;
-        border.setColor(0xB3F7E7F3);
+        border.setColor(liveWallpaperReady ? 0xB3E5E9EF : 0xB3F7E7F3);
         border.setStrokeWidth(2.5f * k);
         border.setStrokeCap(Paint.Cap.ROUND);
         c.drawLine(x - 10 * k, y - 4 * k, x, y + 4 * k, border);
@@ -1335,7 +1390,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /**
-     * Floating app artwork with a label and a small pink focus underline.
+     * Floating app artwork with a label and a small focus underline.
      */
     private void drawShelfTile(Canvas c, int i) {
         HomeApps.Item it = shelf.get(i);
@@ -1357,10 +1412,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tmp.set(cx - iw / 2, cy - ih / 2 - 15 * k * s, cx + iw / 2, cy + ih / 2 - 15 * k * s);
             c.drawBitmap(it.tile, null, tmp, bitmapPaint);
         }
-        shelfLabel.setColor(blend(0xD9F4EAF5, WHITE, fc));
+        shelfLabel.setColor(blend(liveWallpaperReady ? 0xD9EFF2F7 : 0xD9F4EAF5, WHITE, fc));
         if (i < shelfLabels.length) c.drawText(shelfLabels[i], cx, cell.bottom - 19 * k * s, shelfLabel);
         if (fc > 0.01f) {
-            border.setColor(Ui.alpha(0xFFFF67DB, fc));
+            border.setColor(Ui.alpha(liveWallpaperReady ? 0xFFFF263F : 0xFFFF67DB, fc));
             border.setStrokeWidth(3 * k);
             c.drawLine(cx - 22 * k, cell.bottom - 4 * k, cx + 22 * k, cell.bottom - 4 * k, border);
             border.setStrokeWidth(2 * k);
@@ -2690,8 +2745,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Keep the local wallpaper and readable dark palette with or without recommendations. */
     private void drawLightSky(Canvas c) {
-        c.drawColor(0xFF07101F);
-        if (wallpaper != null) c.drawBitmap(wallpaper, null, screen, imagePaint);
+        if (!liveWallpaperReady) {
+            c.drawColor(0xFF07101F);
+            if (wallpaper != null) c.drawBitmap(wallpaper, null, screen, imagePaint);
+        }
         fill.setShader(wallpaperShade);
         fill.setAlpha(255);
         c.drawRect(screen, fill);
@@ -2710,18 +2767,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         applyTone();
         if (!picksOn()) {
             fill.setShader(null);
-            fill.setColor(0x28FF48D7);
+            fill.setColor(liveWallpaperReady ? 0x28FF263F : 0x28FF48D7);
             c.drawRoundRect(75 * k, 80 * k, 85 * k, 144 * k, 5 * k, 5 * k, fill);
-            fill.setColor(0xFFFF54D8);
+            fill.setColor(liveWallpaperReady ? 0xFFFF263F : 0xFFFF54D8);
             c.drawRoundRect(78 * k, 82 * k, 82 * k, 142 * k, 2 * k, 2 * k, fill);
             c.drawText("Free My TV", (MARGIN + 24) * k, 110 * k, homeBrand);
             c.drawText("by KowalskiJr", (MARGIN + 24) * k, 143 * k, homeSignature);
+            if (showIp) c.drawText(ipText, signatureIpX, 143 * k, homeIp);
             drawClock(c);
             if (HomeData.coinCount() > 0) drawQuotes(c);
             return;
         }
         String hello = Ui.tr("Para você", "For You");
         c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
+        if (showIp) c.drawText(ipText, MARGIN * k + lTitle.measureText(hello) + 16 * k, L_TITLE_BASE * k, homeIp);
         // Text tabs (the selected one in bold, in the main text color); with focus on the tabs, the selected one gets
         // the white pill with a shadow and grows a little (the tvOS focus).
         float focus = Ui.clamp(topFocus[tab].value);
@@ -2759,7 +2818,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawClock(Canvas c) {
         c.drawText(dateText, w / 2f, L_DATE_BASE * k, lDate);
-        if (wallpaperGlass != null) c.drawText(clockText, w / 2f, L_CLOCK_BASE * k, clockFrost);
+        if (wallpaperGlass != null && !liveWallpaperReady) c.drawText(clockText, w / 2f, L_CLOCK_BASE * k, clockFrost);
         c.drawText(clockText, w / 2f, L_CLOCK_BASE * k, lClock);
         HomeData.Weather wx = data.weather;
         if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
@@ -2784,14 +2843,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float dividerX = textX + weatherMainWidth + 24 * k;
         tmp.set(x, base - 48 * k, dividerX + 24 * k + weatherRangeWidth + 26 * k, base + 24 * k);
         if (wallpaperGlass != null) c.drawRoundRect(tmp, 36 * k, 36 * k, glassPaint);
-        fill.setShader(weatherGlass);
+        fill.setShader(liveWallpaperReady ? liveWeatherGlass : weatherGlass);
         fill.setAlpha(255);
         c.drawRoundRect(tmp, 36 * k, 36 * k, fill);
         fill.setShader(null);
-        border.setColor(0x50F8D4EE);
+        border.setColor(liveWallpaperReady ? 0x70FF263F : 0x50F8D4EE);
         c.drawRoundRect(tmp, 36 * k, 36 * k, border);
         c.drawLine(dividerX, base - 26 * k, dividerX, base + 4 * k, border);
-        lWeather.setColor(0xFFF4EFF8);
+        lWeather.setColor(liveWallpaperReady ? 0xFFF2F4F7 : 0xFFF4EFF8);
         Symbols.draw(getContext(), c, symbol, x + 26 * k + sw / 2, base - Ui.halfCap(lWeather), size, lWeather.getColor());
         c.drawText(weatherLine, textX, base, lWeather);
         c.drawText(weatherRange, dividerX + 24 * k, base, lWeather);

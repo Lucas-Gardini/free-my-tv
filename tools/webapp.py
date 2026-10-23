@@ -77,6 +77,8 @@ def files(config, made_by):
         with open(os.path.join(web, name), 'rb') as f:
             out[name] = f.read()
     backgrounds = os.path.join(web, 'backgrounds')
+    with open(os.path.join(ROOT, 'app', 'res', 'raw', 'red_eye.mp4'), 'rb') as f:
+        out['backgrounds/Red_Eye_01.mp4'] = f.read()
     if os.path.isdir(backgrounds):
         for name in sorted(os.listdir(backgrounds)):
             with open(os.path.join(backgrounds, name), 'rb') as f:

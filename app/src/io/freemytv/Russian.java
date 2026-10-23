@@ -20,6 +20,9 @@ final class Russian {
             case "All Apps": return "Приложения";
             case "Settings": return "Настройки";
             case "Home Settings": return "Главный экран";
+            case "Show TV IP address": return "Показывать IP-адрес ТВ";
+            case "Live wallpaper": return "Живые обои";
+            case "IP unavailable": return "IP недоступен";
             case "TV Settings": return "Настройки ТВ";
             case "HDMI Inputs": return "Входы HDMI";
             case "Inputs": return "Входы";

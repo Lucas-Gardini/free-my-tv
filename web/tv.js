@@ -13,24 +13,32 @@ var TV = (function () {
   var calls = [];   // a bridge is collected if nothing holds it before its reply arrives
 
   /** One Luna call; done(result) with null on failure. */
-  function luna(uri, params, done) {
+  function luna(uri, params, done, timeout) {
     if (!webos) {
       if (done) setTimeout(function () { done(null); }, 0);
       return;
     }
     var bridge = new window.PalmServiceBridge();
     calls.push(bridge);
-    var finished = false;
-    bridge.onservicecallback = function (message) {
+    var finished = false, timer = null;
+    function finish(result) {
       if (finished) return;
       finished = true;
+      if (timer !== null) clearTimeout(timer);
       var i = calls.indexOf(bridge);
       if (i >= 0) calls.splice(i, 1);
+      if (done) done(result && result.returnValue !== false ? result : null);
+    }
+    bridge.onservicecallback = function (message) {
       var result = null;
       try { result = JSON.parse(message); } catch (e) {}
-      if (done) done(result && result.returnValue !== false ? result : null);
+      finish(result);
     };
-    bridge.call(uri, JSON.stringify(params || {}));
+    if (timeout) timer = setTimeout(function () {
+      try { if (bridge.cancel) bridge.cancel(); } catch (e) {}
+      finish(null);
+    }, timeout);
+    try { bridge.call(uri, JSON.stringify(params || {})); } catch (e) { finish(null); }
   }
 
   // webOS 6 gives Developer Mode apps only the "public" group, which leaves out listLaunchPoints. There the list comes
@@ -267,8 +275,38 @@ var TV = (function () {
 
   // MARK: - The TV, whichever it is
 
+  function ipv4(value) {
+    if (typeof value !== 'string' || !/^\d+\.\d+\.\d+\.\d+$/.test(value)) return '';
+    var parts = value.split('.').map(Number);
+    for (var i = 0; i < 4; i++) if (parts[i] > 255) return '';
+    if (parts[0] === 0 || parts[0] === 127 || parts[0] >= 224 || (parts[0] === 169 && parts[1] === 254)) return '';
+    return parts.join('.');
+  }
+
   return {
     name: webos ? 'webos' : samsung ? 'tizen' : 'browser',
+
+    /** Read only: the LAN address, never a remote/public-IP lookup. */
+    localIp: function (done) {
+      if (samsung) {
+        var ip = '';
+        try {
+          var network = window.webapis.network;
+          var type = network.getActiveConnectionType();
+          if (type === 1 || type === 3) ip = ipv4(network.getIp());
+        } catch (e) {}
+        done(ip);
+      } else if (webos) {
+        try {
+          luna('luna://com.palm.connectionmanager/getStatus', {}, function (result) {
+            var wired = result && result.wired, wifi = result && result.wifi;
+            var ip = wired && wired.state === 'connected' ? ipv4(wired.ipAddress) : '';
+            if (!ip && wifi && wifi.state === 'connected') ip = ipv4(wifi.ipAddress);
+            done(ip);
+          }, 3000);
+        } catch (e) { done(''); }
+      } else done('');
+    },
 
     /** Installed apps, as the TV's launcher lists them: [{id, title, icon, color}]. */
     apps: function (done) {

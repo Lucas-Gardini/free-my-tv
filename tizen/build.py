@@ -66,6 +66,8 @@ def build(preview, config, profile):
     app_id = re.search(r'<tizen:application id="([^"]+)"', manifest).group(1)
     version = re.search(r'<widget [^>]*version="([^"]+)"', manifest).group(1)
     app = webapp.files(config, 'tizen/build.py')
+    app['index.html'] = app['index.html'].replace(b'<script src="tv.js"></script>',
+        b'<script src="$WEBAPIS/webapis/webapis.js"></script>\n<script src="tv.js"></script>')
     for name in ('config.xml', 'icon.png'):
         with open(os.path.join(ROOT, 'tizen', name), 'rb') as f:
             app[name] = f.read()

@@ -51,6 +51,11 @@
   }
 
   var stage = $('stage'), body = document.body;
+  var wallpaperVideo = WallpaperVideo.create($('live-wallpaper'), Prefs.liveWallpaper, function (visible) {
+    setClass(body, 'live-wallpaper', visible);
+  });
+
+  function updateWallpaper() { wallpaperVideo.update(!document.hidden && !saverOn); }
 
   /** The 1920 × 1080 stage fills the window (on the TV it already is 1920 × 1080). */
   function fit() {
@@ -197,8 +202,26 @@
   // MARK: - Top: title, tabs, buttons, quotes
 
   var TAB_KIND = [null, 'movie', 'tv'];
+  var localIp = '', ipLoading = false;
+
+  function renderLocalIp() {
+    $('local-ip').textContent = Prefs.showIp() ? ' · ' + (localIp ? localIp
+      : tr('IP indisponível', 'IP unavailable', 'IP no disponible')) : '';
+  }
+
+  function refreshLocalIp() {
+    renderLocalIp();
+    if (!Prefs.showIp() || document.hidden || ipLoading) return;
+    ipLoading = true;
+    TV.localIp(function (ip) {
+      ipLoading = false;
+      localIp = ip;
+      renderLocalIp();
+    });
+  }
 
   function renderTop() {
+    renderLocalIp();
     $('title').textContent = tr('Para você', 'For You', 'Para ti');
     var tabs = $('tabs');
     tabs.innerHTML = '';
@@ -465,6 +488,10 @@
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
       {label: tr('Widget do clima', 'Weather widget', 'Widget del clima'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
+      {label: tr('Mostrar IP da TV', 'Show TV IP address', 'Mostrar IP del TV'), toggle: Prefs.showIp(),
+        step: function () { Prefs.set('show_ip', !Prefs.showIp()); refreshLocalIp(); }},
+      {label: tr('Fundo animado', 'Live wallpaper', 'Fondo animado'), toggle: Prefs.liveWallpaper(),
+        step: function () { Prefs.set('live_wallpaper', !Prefs.liveWallpaper()); updateWallpaper(); }},
       {label: tr('Widget de cotações', 'Quotes widget', 'Widget de cotizaciones'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
@@ -741,6 +768,7 @@
   function showSaver() {
     var photos = Data.showcase().filter(function (p) { return p.backdrop && Data.appFor(p.app); });
     saverOn = true;
+    updateWallpaper();
     updateMoreHint();
     var s = $('saver');
     s.innerHTML = '';
@@ -785,6 +813,7 @@
 
   function hideSaver() {
     saverOn = false;
+    updateWallpaper();
     updateMoreHint();
     clearTimeout(saverTimer);
     setClass($('saver'), 'on', false);
@@ -815,6 +844,7 @@
   // MARK: - Start
 
   function renderAll() {
+    updateWallpaper();
     renderTop();
     renderQuotes();
     cards = [];
@@ -860,6 +890,7 @@
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
     if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate();
     reset();
+    refreshLocalIp();
     loadApps(function () { renderShelf(); renderDrawer(); Data.refresh(); });
   }
 
@@ -867,14 +898,18 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { hideSaver(); return; }
+    if (document.hidden) { hideSaver(); updateWallpaper(); return; }
+    updateWallpaper();
     idleAt = Date.now();
+    refreshLocalIp();
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
   });
 
   I18N.set(Prefs.language());
   fit();
   renderTop();
+  refreshLocalIp();
+  setInterval(refreshLocalIp, 15000);
   loadApps(function () {
     renderAll();
     Data.refresh();
